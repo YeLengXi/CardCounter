@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/float_bg">
+
+    <!-- 展开状态 -->
+    <LinearLayout
+        android:id="@+id/expand_area"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:background="#DDFFFFFF">
+
+        <!-- 标题栏（可拖拽） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#2C3E50"
+            android:padding="8dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🃏 记牌器"
+                android:textColor="white"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_total"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="54"
+                android:textColor="white"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp" />
+
+            <Button
+                android:id="@+id/btn_collapse"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_marginLeft="5dp"
+                android:text="━"
+                android:textSize="12sp"
+                android:padding="0dp"
+                android:background="?attr/selectableItemBackground"
+                android:minWidth="0dp"
+                android:minHeight="0dp" />
+
+        </LinearLayout>
+
+        <!-- 牌面区域 -->
+        <HorizontalScrollView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/cards_container"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="5dp" />
+
+        </HorizontalScrollView>
+
+        <!-- 底部按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="5dp">
+
+            <Button
+                android:id="@+id/btn_reset"
+                android:layout_width="wrap_content"
+                android:layout_height="35dp"
+                android:text="🔄 重置"
+                android:textSize="12sp"
+                android:paddingLeft="15dp"
+                android:paddingRight="15dp"
+                android:background="#3498DB"
+                android:textColor="white"
+                android:minHeight="0dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- 迷你状态（收起后显示） -->
+    <LinearLayout
+        android:id="@+id/mini_area"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#2C3E50"
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🃏 "
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/tv_mini"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="54"
+            android:textColor="white"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_expand"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_marginLeft="5dp"
+            android:text="▽"
+            android:textSize="10sp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -18,7 +18,7 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@android:drawable/sym_def_app_icon"
         android:label="记牌器"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">

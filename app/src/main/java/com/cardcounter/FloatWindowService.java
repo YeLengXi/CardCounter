@@ -15,14 +15,13 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * 悬浮窗服务
- * 可拖拽的顶部悬浮窗记牌器
+ * 超简洁悬浮窗服务
+ * 只显示牌号和数量，带关闭按钮
  */
 public class FloatWindowService extends Service {
 
@@ -34,28 +33,7 @@ public class FloatWindowService extends Service {
     private View floatView;
     private WindowManager.LayoutParams params;
 
-    // 悬浮窗组件
-    private TextView tvTotal;
-    private TextView tvMini;
     private LinearLayout cardsContainer;
-
-    // 状态
-    private boolean isExpanded = true;
-
-    // 拖拽相关
-    private int initialX, initialY;
-    private float initialTouchX, initialTouchY;
-    private boolean isDragging = false;
-    private long clickStartTime;
-    private long lastClickTime = 0;
-
-    public static FloatWindowService getInstance() {
-        return instance;
-    }
-
-    public static boolean isRunning() {
-        return instance != null;
-    }
 
     @Override
     public void onCreate() {
@@ -63,22 +41,18 @@ public class FloatWindowService extends Service {
         instance = this;
 
         try {
-            // 先创建通知
             createNotificationChannel();
             Notification notification = createNotification();
-
             if (notification != null) {
                 startForeground(NOTIFICATION_ID, notification);
             } else {
-                // 如果通知创建失败，使用默认通知
                 startForeground(NOTIFICATION_ID, new Notification());
             }
         } catch (Exception e) {
-            // 如果startForeground失败，继续创建悬浮窗
             android.util.Log.e("FloatWindowService", "startForeground error", e);
         }
 
-        // 延迟创建悬浮窗，避免在服务启动时崩溃
+        // 延迟创建悬浮窗
         new android.os.Handler().postDelayed(new Runnable() {
             @Override
             public void run() {
@@ -116,9 +90,14 @@ public class FloatWindowService extends Service {
         instance = null;
     }
 
-    /**
-     * 创建通知渠道
-     */
+    public static FloatWindowService getInstance() {
+        return instance;
+    }
+
+    public static boolean isRunning() {
+        return instance != null;
+    }
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
@@ -139,21 +118,16 @@ public class FloatWindowService extends Service {
         }
     }
 
-    /**
-     * 创建前台服务通知
-     */
     private Notification createNotification() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
                         .setContentTitle("记牌器运行中")
-                        .setContentText("悬浮窗已启动")
+                        .setContentText("点击数字减少")
                         .setSmallIcon(android.R.drawable.ic_menu_info_details)
                         .setOngoing(true);
 
-                // Android 13+ 需要设置 PendingIntent
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    // 点击通知返回主Activity
                     Intent notificationIntent = new Intent(this, MainActivity.class);
                     notificationIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                     android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
@@ -170,9 +144,6 @@ public class FloatWindowService extends Service {
         return null;
     }
 
-    /**
-     * 创建悬浮窗
-     */
     private void createFloatWindow() {
         try {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
@@ -198,11 +169,10 @@ public class FloatWindowService extends Service {
             if (savedX != -1) {
                 params.x = savedX;
             } else {
-                params.x = getScreenWidth() - getWindowWidth();
+                params.x = getScreenWidth() - 300;
             }
             params.y = savedY;
 
-            // 初始化组件
             initFloatViews();
 
             // 设置拖拽监听
@@ -217,56 +187,18 @@ public class FloatWindowService extends Service {
         }
     }
 
-    /**
-     * 初始化悬浮窗组件
-     */
     private void initFloatViews() {
-        tvTotal = floatView.findViewById(R.id.tv_total);
-        tvMini = floatView.findViewById(R.id.tv_mini);
         cardsContainer = floatView.findViewById(R.id.cards_container);
 
-        // 更新总数
-        if (tvTotal != null) {
-            tvTotal.setText(String.valueOf(CardDataManager.getInstance().getTotalCount()));
-        }
-        if (tvMini != null) {
-            tvMini.setText(String.valueOf(CardDataManager.getInstance().getTotalCount()));
-        }
-
-        // 展开/收起按钮
-        View btnCollapse = floatView.findViewById(R.id.btn_collapse);
-        if (btnCollapse != null) {
-            btnCollapse.setOnClickListener(v -> {
-                isExpanded = false;
-                updateExpandState();
-            });
-        }
-
-        View btnExpand = floatView.findViewById(R.id.btn_expand);
-        if (btnExpand != null) {
-            btnExpand.setOnClickListener(v -> {
-                isExpanded = true;
-                updateExpandState();
+        // 关闭按钮
+        View btnClose = floatView.findViewById(R.id.btn_close);
+        if (btnClose != null) {
+            btnClose.setOnClickListener(v -> {
+                stopSelf();
             });
         }
 
         // 创建所有牌的按钮
-        createCardButtons();
-
-        // 重置按钮
-        View btnReset = floatView.findViewById(R.id.btn_reset);
-        if (btnReset != null) {
-            btnReset.setOnClickListener(v -> {
-                CardDataManager.getInstance().reset();
-                updateAllCards();
-            });
-        }
-    }
-
-    /**
-     * 创建牌的按钮
-     */
-    private void createCardButtons() {
         String[] cards = {"大王", "小王", "2", "A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3"};
 
         for (String card : cards) {
@@ -275,10 +207,7 @@ public class FloatWindowService extends Service {
         }
     }
 
-    /**
-     * 创建单个牌的视图
-     */
-    private View createCardView(String cardName) {
+    private View createCardView(final String cardName) {
         View view = LayoutInflater.from(this).inflate(R.layout.card_item, null);
 
         TextView tvName = view.findViewById(R.id.tv_card_name);
@@ -294,62 +223,55 @@ public class FloatWindowService extends Service {
         view.setOnClickListener(v -> {
             CardDataManager.getInstance().removeCard(cardName);
             updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
-            updateTotal();
-            vibrate();
         });
 
         // 长按增加
         view.setOnLongClickListener(v -> {
             CardDataManager.getInstance().addCard(cardName);
             updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
-            updateTotal();
             return true;
         });
 
         return view;
     }
 
-    /**
-     * 更新单张牌的显示
-     */
     private void updateCardDisplay(View view, String cardName, int count) {
-        TextView tvName = view.findViewById(R.id.tv_card_name);
         TextView tvCount = view.findViewById(R.id.tv_card_count);
+        TextView tvName = view.findViewById(R.id.tv_card_name);
 
         if (tvCount != null) {
             tvCount.setText(String.valueOf(count));
         }
 
+        // 根据数量设置颜色
         int bgColor;
+        int countColor;
         if (count == 0) {
-            bgColor = 0xFF95A5A6;
+            bgColor = 0xFFECF0F1;
+            countColor = 0xFFBDC3C7;
         } else if (count == 1 && CardDataManager.getInstance().getInitialCount(cardName) > 1) {
-            bgColor = 0xFFFFD700;
+            bgColor = 0xFFFFF59D;
+            countColor = 0xFFE74C3C;
         } else if (cardName.equals("大王")) {
             bgColor = 0xFFFFE5E5;
+            countColor = 0xFFE74C3C;
         } else if (cardName.equals("小王")) {
             bgColor = 0xFFE5E5FF;
+            countColor = 0xFF3498DB;
         } else if (cardName.equals("2") || cardName.equals("A")) {
             bgColor = 0xFFFFF5E5;
+            countColor = 0xFFE67E22;
         } else {
-            bgColor = 0xFFF5F5F5;
+            bgColor = 0xFFFFFFFF;
+            countColor = 0xFF27AE60;
         }
+
         view.setBackgroundColor(bgColor);
-    }
-
-    /**
-     * 更新指定牌的视图
-     */
-    public void updateCardView(String cardName, int count) {
-        if (cardsContainer == null) return;
-
-        for (int i = 0; i < cardsContainer.getChildCount(); i++) {
-            View child = cardsContainer.getChildAt(i);
-            TextView tvName = child.findViewById(R.id.tv_card_name);
-            if (tvName != null && tvName.getText().toString().equals(cardName)) {
-                updateCardDisplay(child, cardName, count);
-                break;
-            }
+        if (tvCount != null) {
+            tvCount.setTextColor(countColor);
+        }
+        if (tvName != null) {
+            tvName.setTextColor(countColor);
         }
     }
 
@@ -357,20 +279,15 @@ public class FloatWindowService extends Service {
      * 更新所有牌
      */
     public void updateAllCards() {
-        String[] cards = {"大王", "小王", "2", "A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3"};
-        for (String card : cards) {
-            updateCardView(card, CardDataManager.getInstance().getCardCount(card));
-        }
-        updateTotal();
-    }
+        if (cardsContainer == null) return;
 
-    private void updateTotal() {
-        int total = CardDataManager.getInstance().getTotalCount();
-        if (tvTotal != null) {
-            tvTotal.setText(String.valueOf(total));
-        }
-        if (tvMini != null) {
-            tvMini.setText(String.valueOf(total));
+        for (int i = 0; i < cardsContainer.getChildCount(); i++) {
+            View child = cardsContainer.getChildAt(i);
+            TextView tvName = child.findViewById(R.id.tv_card_name);
+            if (tvName != null) {
+                String cardName = tvName.getText().toString();
+                updateCardDisplay(child, cardName, CardDataManager.getInstance().getCardCount(cardName));
+            }
         }
     }
 
@@ -381,6 +298,10 @@ public class FloatWindowService extends Service {
         if (floatView == null) return;
 
         floatView.setOnTouchListener(new View.OnTouchListener() {
+            private int initialX, initialY;
+            private float initialTouchX, initialTouchY;
+            private boolean isDragging = false;
+
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
@@ -390,7 +311,6 @@ public class FloatWindowService extends Service {
                         initialTouchX = event.getRawX();
                         initialTouchY = event.getRawY();
                         isDragging = false;
-                        clickStartTime = System.currentTimeMillis();
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
@@ -420,71 +340,12 @@ public class FloatWindowService extends Service {
 
                     case MotionEvent.ACTION_UP:
                         savePosition(params.x, params.y);
-
-                        long clickDuration = System.currentTimeMillis() - clickStartTime;
-                        if (!isDragging && clickDuration < 300) {
-                            long currentTime = System.currentTimeMillis();
-                            if (currentTime - lastClickTime < 300) {
-                                toggleExpand();
-                            }
-                            lastClickTime = currentTime;
-                        }
-
                         isDragging = false;
                         return true;
                 }
                 return false;
             }
         });
-    }
-
-    /**
-     * 切换展开/收起状态
-     */
-    private void toggleExpand() {
-        isExpanded = !isExpanded;
-        updateExpandState();
-    }
-
-    /**
-     * 更新展开/收起状态
-     */
-    private void updateExpandState() {
-        View expandView = floatView.findViewById(R.id.expand_area);
-        View miniView = floatView.findViewById(R.id.mini_area);
-
-        if (expandView != null) {
-            expandView.setVisibility(isExpanded ? View.VISIBLE : View.GONE);
-        }
-        if (miniView != null) {
-            miniView.setVisibility(isExpanded ? View.GONE : View.VISIBLE);
-        }
-    }
-
-    /**
-     * 震动反馈
-     */
-    private void vibrate() {
-        try {
-            android.os.Vibrator vibrator = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
-            if (vibrator != null && hasVibratePermission()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(android.os.VibrationEffect.createOneShot(50, 50));
-                } else {
-                    vibrator.vibrate(50);
-                }
-            }
-        } catch (Exception e) {
-            // 忽略
-        }
-    }
-
-    private boolean hasVibratePermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            android.os.Vibrator vibrator = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
-            return vibrator != null;
-        }
-        return true;
     }
 
     /**
@@ -502,9 +363,6 @@ public class FloatWindowService extends Service {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
                 wm.getDefaultDisplay().getSize(size);
                 return size.x;
-            } else {
-                wm.getDefaultDisplay().getSize(size);
-                return size.x;
             }
         }
         return 1080;
@@ -517,15 +375,8 @@ public class FloatWindowService extends Service {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
                 wm.getDefaultDisplay().getSize(size);
                 return size.y;
-            } else {
-                wm.getDefaultDisplay().getSize(size);
-                return size.y;
             }
         }
         return 1920;
-    }
-
-    private int getWindowWidth() {
-        return 300;
     }
 }

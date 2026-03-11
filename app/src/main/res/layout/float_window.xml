@@ -3,7 +3,7 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#80FFFFFF"
+    android:background="#B3FFFFFF"
     android:padding="4dp">
 
     <!-- 顶栏：关闭按钮 -->

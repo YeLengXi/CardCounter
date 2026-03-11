@@ -37,7 +37,7 @@ jobs:
           -dname "CN=Android Debug,O=Android,C=US"
 
     - name: 构建APK
-      run: gradle assembleRelease --stacktrace
+      run: gradle assembleRelease --stacktrace --info || gradle assembleRelease --debug --stacktrace
 
     - name: 查找APK文件
       run: |

@@ -1,24 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.cardcounter">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- 悬浮窗权限 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- 截图权限 -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- 悬浮窗权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 开机启动 -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 震动 -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="true"
-        android:roundIcon="@android:drawable/sym_def_app_icon"
         android:label="记牌器"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
@@ -39,17 +33,11 @@
             android:name=".FloatWindowService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
-
-        <!-- 开机启动接收器 -->
-        <receiver
-            android:name=".BootReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="悬浮窗记牌器" />
+        </service>
 
     </application>
 

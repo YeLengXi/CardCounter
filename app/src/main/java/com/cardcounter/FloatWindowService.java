@@ -119,7 +119,7 @@ public class FloatWindowService extends Service {
                     "记牌器",
                     NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription="记牌器悬浮窗服务";
+            channel.setDescription("记牌器悬浮窗服务");
 
             NotificationManager manager = getSystemService(NotificationManager.class);
             manager.createNotificationChannel(channel);

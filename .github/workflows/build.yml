@@ -19,6 +19,10 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: 初始化Gradle Wrapper
+      run: |
+        gradle wrapper --gradle-version 8.0
+
     - name: 授予gradlew执行权限
       run: chmod +x gradlew
 

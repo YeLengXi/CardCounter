@@ -314,30 +314,28 @@ public class FloatWindowService extends Service {
      * 更新单张牌的显示
      */
     private void updateCardDisplay(View view, String cardName, int count) {
+        TextView tvName = view.findViewById(R.id.tv_card_name);
         TextView tvCount = view.findViewById(R.id.tv_card_count);
-        View cardBg = view.findViewById(R.id.card_bg);
 
         if (tvCount != null) {
             tvCount.setText(String.valueOf(count));
         }
 
-        if (cardBg != null) {
-            int bgColor;
-            if (count == 0) {
-                bgColor = 0xFF95A5A6;
-            } else if (count == 1 && CardDataManager.getInstance().getInitialCount(cardName) > 1) {
-                bgColor = 0xFFFFD700;
-            } else if (cardName.equals("大王")) {
-                bgColor = 0xFFFFE5E5;
-            } else if (cardName.equals("小王")) {
-                bgColor = 0xFFE5E5FF;
-            } else if (cardName.equals("2") || cardName.equals("A")) {
-                bgColor = 0xFFFFF5E5;
-            } else {
-                bgColor = 0xFFF5F5F5;
-            }
-            cardBg.setBackgroundColor(bgColor);
+        int bgColor;
+        if (count == 0) {
+            bgColor = 0xFF95A5A6;
+        } else if (count == 1 && CardDataManager.getInstance().getInitialCount(cardName) > 1) {
+            bgColor = 0xFFFFD700;
+        } else if (cardName.equals("大王")) {
+            bgColor = 0xFFFFE5E5;
+        } else if (cardName.equals("小王")) {
+            bgColor = 0xFFE5E5FF;
+        } else if (cardName.equals("2") || cardName.equals("A")) {
+            bgColor = 0xFFFFF5E5;
+        } else {
+            bgColor = 0xFFF5F5F5;
         }
+        view.setBackgroundColor(bgColor);
     }
 
     /**

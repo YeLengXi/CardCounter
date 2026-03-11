@@ -4,38 +4,28 @@
     android:layout_height="55dp"
     android:orientation="vertical"
     android:layout_margin="2dp"
-    android:background="@drawable/card_bg">
+    android:background="#F5F5F5">
 
-    <!-- 牌面背景 -->
-    <LinearLayout
-        android:id="@+id/card_bg"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:background="#F5F5F5"
-        android:padding="2dp">
+    <!-- 牌名 -->
+    <TextView
+        android:id="@+id/tv_card_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="A"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="#2C3E50" />
 
-        <!-- 牌名 -->
-        <TextView
-            android:id="@+id/tv_card_name"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="A"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:textColor="#2C3E50" />
-
-        <!-- 数量 -->
-        <TextView
-            android:id="@+id/tv_card_count"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="4"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="#2C3E50" />
-
-    </LinearLayout>
+    <!-- 数量 -->
+    <TextView
+        android:id="@+id/tv_card_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="4"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textColor="#2C3E50" />
 
 </LinearLayout>

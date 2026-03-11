@@ -24,6 +24,18 @@ jobs:
       with:
         gradle-version: '8.0'
 
+    - name: 生成调试签名密钥
+      run: |
+        keytool -genkeypair \
+          -alias androiddebugkey \
+          -keystore app/debug.keystore \
+          -storepass android \
+          -keypass android \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -dname "CN=Android Debug,O=Android,C=US"
+
     - name: 构建APK
       run: gradle assembleRelease --stacktrace
 

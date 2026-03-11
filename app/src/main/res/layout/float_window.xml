@@ -28,7 +28,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="🃏 记牌器"
-                android:textColor="white"
+                android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -37,7 +37,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="54"
-                android:textColor="white"
+                android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:paddingLeft="8dp"
@@ -89,7 +89,7 @@
                 android:paddingLeft="15dp"
                 android:paddingRight="15dp"
                 android:background="#3498DB"
-                android:textColor="white"
+                android:textColor="#FFFFFF"
                 android:minHeight="0dp" />
 
         </LinearLayout>
@@ -117,7 +117,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="54"
-            android:textColor="white"
+            android:textColor="#FFFFFF"
             android:textSize="18sp"
             android:textStyle="bold" />
 

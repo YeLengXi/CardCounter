@@ -283,7 +283,6 @@ public class FloatWindowService extends Service {
 
         TextView tvName = view.findViewById(R.id.tv_card_name);
         TextView tvCount = view.findViewById(R.id.tv_card_count);
-        View cardBg = view.findViewById(R.id.card_bg);
 
         if (tvName != null) {
             tvName.setText(cardName);

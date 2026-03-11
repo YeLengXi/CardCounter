@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'com.cardcounter'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.cardcounter"
         minSdk 24
-        targetSdk 34
+        targetSdk 35
         versionCode 1
         versionName "1.0"
     }
@@ -22,7 +22,6 @@ android {
             keyPassword "android"
         }
         release {
-            // 使用调试签名，这样APK可以正常安装
             storeFile file("debug.keystore")
             storePassword "android"
             keyAlias "androiddebugkey"
@@ -37,7 +36,6 @@ android {
         release {
             signingConfig signingConfigs.release
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 

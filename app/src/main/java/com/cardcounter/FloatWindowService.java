@@ -131,11 +131,12 @@ public class FloatWindowService extends Service {
      */
     private Notification createNotification() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            return new Notification.Builder(this, CHANNEL_ID)
+            Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("记牌器运行中")
                     .setContentText("点击展开/收起悬浮窗")
                     .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                    .build();
+                    .setOngoing(true);
+            return builder.build();
         }
         return null;
     }

@@ -27,9 +27,17 @@ jobs:
     - name: 构建APK
       run: gradle assembleRelease --stacktrace
 
+    - name: 查找APK文件
+      run: |
+        echo "查找APK文件..."
+        find . -name "*.apk" -type f
+        echo "build目录内容:"
+        ls -la app/build/outputs/apk/release/ || echo "目录不存在"
+
     - name: 上传APK
       uses: actions/upload-artifact@v4
       with:
         name: CardCounter-APK
-        path: app/build/outputs/apk/release/app-release.apk
+        path: app/build/outputs/apk/release/*.apk
         retention-days: 90
+        if-no-files-found: error

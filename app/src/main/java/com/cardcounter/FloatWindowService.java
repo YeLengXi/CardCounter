@@ -7,9 +7,13 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -19,14 +23,18 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
- * 超简洁悬浮窗服务
- * 只显示牌号和数量，带关闭按钮
+ * 悬浮窗服务 - 带自动识别功能
  */
 public class FloatWindowService extends Service {
 
+    private static final String TAG = "FloatWindowService";
     private static final String CHANNEL_ID = "CardCounterChannel";
     private static final int NOTIFICATION_ID = 1001;
+    private static final int AUTO_CAPTURE_INTERVAL = 2000; // 每2秒识别一次
 
     private static FloatWindowService instance;
     private WindowManager windowManager;
@@ -34,6 +42,13 @@ public class FloatWindowService extends Service {
     private WindowManager.LayoutParams params;
 
     private LinearLayout cardsContainer;
+
+    // 自动识别相关
+    private boolean autoCaptureEnabled = false;
+    private Handler autoCaptureHandler;
+    private Runnable autoCaptureRunnable;
+    private String lastRecognizedText = "";
+    private Bitmap lastCaptureBitmap = null;
 
     @Override
     public void onCreate() {
@@ -49,16 +64,14 @@ public class FloatWindowService extends Service {
                 startForeground(NOTIFICATION_ID, new Notification());
             }
         } catch (Exception e) {
-            android.util.Log.e("FloatWindowService", "startForeground error", e);
+            Log.e(TAG, "startForeground error", e);
         }
 
         // 延迟创建悬浮窗
-        new android.os.Handler().postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                createFloatWindowSafe();
-            }
-        }, 100);
+        new Handler().postDelayed(this::createFloatWindowSafe, 100);
+
+        // 初始化自动识别
+        initAutoCapture();
     }
 
     private void createFloatWindowSafe() {
@@ -66,7 +79,7 @@ public class FloatWindowService extends Service {
             windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
             createFloatWindow();
         } catch (Exception e) {
-            android.util.Log.e("FloatWindowService", "createFloatWindow error", e);
+            Log.e(TAG, "createFloatWindow error", e);
             Toast.makeText(this, "悬浮窗创建失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
@@ -84,10 +97,15 @@ public class FloatWindowService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        stopAutoCapture();
+
         if (windowManager != null && floatView != null) {
             windowManager.removeView(floatView);
         }
         instance = null;
+
+        // 释放截屏资源
+        ScreenCaptureManager.getInstance().release();
     }
 
     public static FloatWindowService getInstance() {
@@ -96,6 +114,117 @@ public class FloatWindowService extends Service {
 
     public static boolean isRunning() {
         return instance != null;
+    }
+
+    /**
+     * 启用自动识别
+     */
+    public void enableAutoCapture() {
+        if (ScreenCaptureManager.getInstance().hasPermission()) {
+            autoCaptureEnabled = true;
+            startAutoCapture();
+            Log.d(TAG, "自动识别已启用");
+        }
+    }
+
+    /**
+     * 禁用自动识别
+     */
+    public void disableAutoCapture() {
+        autoCaptureEnabled = false;
+        stopAutoCapture();
+        Log.d(TAG, "自动识别已禁用");
+    }
+
+    private void initAutoCapture() {
+        autoCaptureHandler = new Handler(Looper.getMainLooper());
+        autoCaptureRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (autoCaptureEnabled) {
+                    performAutoCapture();
+                    autoCaptureHandler.postDelayed(this, AUTO_CAPTURE_INTERVAL);
+                }
+            }
+        };
+    }
+
+    private void startAutoCapture() {
+        if (autoCaptureHandler != null && autoCaptureRunnable != null) {
+            autoCaptureHandler.post(autoCaptureRunnable);
+        }
+    }
+
+    private void stopAutoCapture() {
+        if (autoCaptureHandler != null && autoCaptureRunnable != null) {
+            autoCaptureHandler.removeCallbacks(autoCaptureRunnable);
+        }
+    }
+
+    private void performAutoCapture() {
+        if (!ScreenCaptureManager.getInstance().hasPermission()) {
+            return;
+        }
+
+        ScreenCaptureManager.getInstance().startCapture(this, new ScreenCaptureManager.ScreenCaptureCallback() {
+            @Override
+            public void onCaptureReady(Bitmap bitmap) {
+                if (bitmap != null) {
+                    lastCaptureBitmap = bitmap;
+                    recognizeCards(bitmap);
+                }
+            }
+
+            @Override
+            public void onCaptureError(String error) {
+                Log.e(TAG, "截图失败: " + error);
+            }
+        });
+    }
+
+    private void recognizeCards(Bitmap bitmap) {
+        CardRecognizer.getInstance().recognizeCards(bitmap, new CardRecognizer.CardRecognitionCallback() {
+            @Override
+            public void onCardsRecognized(Map<String, Integer> playedCards) {
+                updateCardsFromRecognition(playedCards);
+            }
+
+            @Override
+            public void onRecognitionError(String error) {
+                Log.e(TAG, "识别失败: " + error);
+            }
+        });
+    }
+
+    private void updateCardsFromRecognition(Map<String, Integer> playedCards) {
+        if (playedCards == null || playedCards.isEmpty()) {
+            return;
+        }
+
+        // 计算需要扣除的牌数
+        CardDataManager dataManager = CardDataManager.getInstance();
+
+        for (Map.Entry<String, Integer> entry : playedCards.entrySet()) {
+            String card = entry.getKey();
+            int recognizedCount = entry.getValue();
+
+            // 获取当前剩余数量
+            int currentCount = dataManager.getCardCount(card);
+            int initialCount = dataManager.getInitialCount(card);
+            int actualPlayedCount = initialCount - currentCount;
+
+            // 如果识别出的数量大于已出牌数，说明有新牌被打出
+            if (recognizedCount > actualPlayedCount) {
+                int newPlayedCount = recognizedCount - actualPlayedCount;
+                for (int i = 0; i < newPlayedCount; i++) {
+                    dataManager.removeCard(card);
+                }
+                Log.d(TAG, "自动扣除: " + card + " x" + newPlayedCount);
+            }
+        }
+
+        // 更新界面
+        updateAllCards();
     }
 
     private void createNotificationChannel() {
@@ -113,7 +242,7 @@ public class FloatWindowService extends Service {
                     manager.createNotificationChannel(channel);
                 }
             } catch (Exception e) {
-                android.util.Log.e("FloatWindowService", "createNotificationChannel error", e);
+                Log.e(TAG, "createNotificationChannel error", e);
             }
         }
     }
@@ -123,7 +252,7 @@ public class FloatWindowService extends Service {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
                         .setContentTitle("记牌器运行中")
-                        .setContentText("点击数字减少")
+                        .setContentText(autoCaptureEnabled ? "自动识别已启用" : "点击数字减少")
                         .setSmallIcon(android.R.drawable.ic_menu_info_details)
                         .setOngoing(true);
 
@@ -139,7 +268,7 @@ public class FloatWindowService extends Service {
                 return builder.build();
             }
         } catch (Exception e) {
-            android.util.Log.e("FloatWindowService", "createNotification error", e);
+            Log.e(TAG, "createNotification error", e);
         }
         return null;
     }
@@ -181,8 +310,13 @@ public class FloatWindowService extends Service {
             // 添加到窗口
             windowManager.addView(floatView, params);
 
+            // 如果有截屏权限，自动启用识别
+            if (ScreenCaptureManager.getInstance().hasPermission()) {
+                enableAutoCapture();
+            }
+
         } catch (Exception e) {
-            android.util.Log.e("FloatWindowService", "addView error", e);
+            Log.e(TAG, "addView error", e);
             Toast.makeText(this, "悬浮窗添加失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
@@ -348,9 +482,6 @@ public class FloatWindowService extends Service {
         });
     }
 
-    /**
-     * 保存位置
-     */
     private void savePosition(int x, int y) {
         SharedPreferences prefs = getSharedPreferences("float_window", Context.MODE_PRIVATE);
         prefs.edit().putInt("x", x).putInt("y", y).apply();

@@ -13,19 +13,26 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * 主Activity - 简洁版
+ * 主Activity - 带自动识别功能
  */
 public class MainActivity extends Activity {
 
     private static final int REQUEST_OVERLAY_PERMISSION = 1001;
+    private static final int REQUEST_SCREEN_CAPTURE = 1002;
+
     private Switch switchService;
     private TextView tvStatus;
     private Button btnReset;
+    private Button btnCapturePermission;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // 初始化截屏管理器
+        ScreenCaptureManager.getInstance().init(this);
+        CardRecognizer.getInstance().init();
 
         // 检查权限
         if (!hasOverlayPermission()) {
@@ -39,6 +46,7 @@ public class MainActivity extends Activity {
         switchService = findViewById(R.id.switch_service);
         tvStatus = findViewById(R.id.tv_status);
         btnReset = findViewById(R.id.btn_reset);
+        btnCapturePermission = findViewById(R.id.btn_capture_permission);
 
         // 开关切换
         switchService.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -55,6 +63,14 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "已重置", Toast.LENGTH_SHORT).show();
         });
 
+        // 截屏权限按钮
+        if (btnCapturePermission != null) {
+            updateCapturePermissionButton();
+            btnCapturePermission.setOnClickListener(v -> {
+                ScreenCaptureManager.getInstance().requestPermission(MainActivity.this);
+            });
+        }
+
         updateServiceStatus();
     }
 
@@ -62,6 +78,17 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         updateServiceStatus();
+        if (btnCapturePermission != null) {
+            updateCapturePermissionButton();
+        }
+    }
+
+    private void updateCapturePermissionButton() {
+        boolean hasPermission = ScreenCaptureManager.getInstance().hasPermission();
+        if (btnCapturePermission != null) {
+            btnCapturePermission.setText(hasPermission ? "✓ 截屏权限已授予" : "授予截屏权限");
+            btnCapturePermission.setEnabled(!hasPermission);
+        }
     }
 
     private void updateServiceStatus() {
@@ -97,10 +124,27 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
         if (requestCode == REQUEST_OVERLAY_PERMISSION) {
             if (!hasOverlayPermission()) {
                 Toast.makeText(this, "未授予悬浮窗权限", Toast.LENGTH_SHORT).show();
                 finish();
+            }
+        } else if (requestCode == REQUEST_SCREEN_CAPTURE) {
+            // 处理截屏权限结果
+            ScreenCaptureManager.getInstance().handleActivityResult(requestCode, resultCode, data);
+            updateCapturePermissionButton();
+
+            if (resultCode == Activity.RESULT_OK) {
+                Toast.makeText(this, "截屏权限已授予，自动识别功能已启用", Toast.LENGTH_SHORT).show();
+
+                // 如果服务正在运行，通知其启用自动识别
+                if (FloatWindowService.isRunning()) {
+                    FloatWindowService service = FloatWindowService.getInstance();
+                    if (service != null) {
+                        service.enableAutoCapture();
+                    }
+                }
             }
         }
     }
@@ -112,6 +156,27 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // 检查是否有截屏权限
+        if (!ScreenCaptureManager.getInstance().hasPermission()) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("需要截屏权限")
+                    .setMessage("自动识别牌面功能需要截屏权限，是否现在授予？")
+                    .setPositiveButton("授予", (dialog, which) -> {
+                        ScreenCaptureManager.getInstance().requestPermission(MainActivity.this);
+                        switchService.setChecked(false);
+                    })
+                    .setNegativeButton("稍后", (dialog, which) -> {
+                        // 不授予权限也启动服务，但无法自动识别
+                        startServiceOnly();
+                    })
+                    .show();
+            return;
+        }
+
+        startServiceOnly();
+    }
+
+    private void startServiceOnly() {
         Intent intent = new Intent(this, FloatWindowService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent);

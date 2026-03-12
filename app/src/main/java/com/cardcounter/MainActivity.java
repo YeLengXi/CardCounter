@@ -16,9 +16,6 @@ import android.widget.Toast;
 
 import java.util.List;
 
-/**
- * 主Activity - 带无障碍服务自动识别和调试功能
- */
 public class MainActivity extends Activity {
 
     private static final int REQUEST_OVERLAY_PERMISSION = 1001;
@@ -35,11 +32,9 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // 初始化
         ScreenCaptureManager.getInstance().init(this);
         CardRecognizer.getInstance().init();
 
-        // 检查悬浮窗权限
         if (!hasOverlayPermission()) {
             showPermissionDialog();
         }
@@ -55,39 +50,36 @@ public class MainActivity extends Activity {
         tvAccessibilityStatus = findViewById(R.id.tv_accessibility_status);
         btnDebug = findViewById(R.id.btn_debug);
 
-        // 开关切换
-        switchService.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (isChecked) {
-                startFloatService();
-            } else {
-                stopFloatService();
-            }
-        });
-
-        // 重置按钮
-        btnReset.setOnClickListener(v -> {
-            CardDataManager.getInstance().reset();
-            // 同时重置无障碍服务的状态
-            if (CardAccessibilityService.isEnabled()) {
-                CardAccessibilityService.getInstance().resetGame();
-            }
-            Toast.makeText(this, "已重置", Toast.LENGTH_SHORT).show();
-        });
-
-        // 无障碍服务按钮
-        if (btnAccessibility != null) {
-            updateAccessibilityButton();
-            btnAccessibility.setOnClickListener(v -> {
-                openAccessibilitySettings();
+        if (switchService != null) {
+            switchService.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                if (isChecked) {
+                    startFloatService();
+                } else {
+                    stopFloatService();
+                }
             });
         }
 
-        // 调试按钮
+        if (btnReset != null) {
+            btnReset.setOnClickListener(v -> {
+                CardDataManager.getInstance().reset();
+                if (CardAccessibilityService.isEnabled()) {
+                    CardAccessibilityService.getInstance().resetGame();
+                }
+                Toast.makeText(this, "已重置", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        if (btnAccessibility != null) {
+            updateAccessibilityButton();
+            btnAccessibility.setOnClickListener(v -> openAccessibilitySettings());
+        }
+
         if (btnDebug != null) {
             btnDebug.setOnClickListener(v -> {
                 if (CardAccessibilityService.isEnabled()) {
                     CardAccessibilityService.getInstance().dumpCurrentText();
-                    Toast.makeText(this, "已输出调试日志，请使用adb查看", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "日志已输出", Toast.LENGTH_SHORT).show();
                 } else {
                     Toast.makeText(this, "请先开启无障碍服务", Toast.LENGTH_SHORT).show();
                 }
@@ -100,7 +92,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // 从设置返回时，刷新所有状态
         updateServiceStatus();
         if (btnAccessibility != null) {
             updateAccessibilityButton();
@@ -110,7 +101,7 @@ public class MainActivity extends Activity {
     private void updateAccessibilityButton() {
         boolean isEnabled = isAccessibilityServiceEnabled();
         if (btnAccessibility != null) {
-            btnAccessibility.setText(isEnabled ? "✓ 无障碍服务已开启" : "开启无障碍服务");
+            btnAccessibility.setText(isEnabled ? "已开启" : "开启无障碍服务");
             btnAccessibility.setEnabled(!isEnabled);
         }
         if (tvAccessibilityStatus != null) {
@@ -119,9 +110,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    /**
-     * 检查无障碍服务是否启用
-     */
     private boolean isAccessibilityServiceEnabled() {
         try {
             String packageName = getPackageName();
@@ -137,31 +125,16 @@ public class MainActivity extends Activity {
                     return true;
                 }
             }
-
-            String enabledServicesStr = Settings.Secure.getString(
-                    getContentResolver(),
-                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            );
-
-            if (enabledServicesStr != null) {
-                return enabledServicesStr.contains(packageName) &&
-                       (enabledServicesStr.contains("CardAccessibilityService") ||
-                        enabledServicesStr.contains("/."));
-            }
-
         } catch (Exception e) {
-            // 检查失败，返回false
+            // ignore
         }
         return false;
     }
 
-    /**
-     * 打开无障碍服务设置页面
-     */
     private void openAccessibilitySettings() {
         new android.app.AlertDialog.Builder(this)
                 .setTitle("开启无障碍服务")
-                .setMessage("开启无障碍服务后，记牌器可以自动识别游戏中的牌面。\n\n1. 在设置中找到「记牌器」\n2. 开启无障碍服务开关\n\n开启后返回此页面即可")
+                .setMessage("开启无障碍服务后，记牌器可以自动识别游戏中的牌面。")
                 .setPositiveButton("去设置", (dialog, which) -> {
                     Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
                     startActivity(intent);
@@ -172,9 +145,11 @@ public class MainActivity extends Activity {
 
     private void updateServiceStatus() {
         boolean isRunning = FloatWindowService.isRunning();
-        tvStatus.setText(isRunning ? "● 运行中" : "● 已停止");
+        tvStatus.setText(isRunning ? "运行中" : "已停止");
         tvStatus.setTextColor(isRunning ? 0xFF27AE60 : 0xFF95A5A6);
-        switchService.setChecked(isRunning);
+        if (switchService != null) {
+            switchService.setChecked(isRunning);
+        }
     }
 
     private boolean hasOverlayPermission() {
@@ -193,17 +168,14 @@ public class MainActivity extends Activity {
                             Uri.parse("package:" + getPackageName()));
                     startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION);
                 })
-                .setNegativeButton("退出", (dialog, which) -> {
-                    finish();
-                })
+                .setNegativeButton("退出", (dialog, which) -> finish())
                 .setCancelable(false)
                 .show();
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, Intent data);
-
+        super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_OVERLAY_PERMISSION) {
             if (!hasOverlayPermission()) {
                 Toast.makeText(this, "未授予悬浮窗权限", Toast.LENGTH_SHORT).show();
@@ -217,22 +189,24 @@ public class MainActivity extends Activity {
     private void startFloatService() {
         if (!hasOverlayPermission()) {
             Toast.makeText(this, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show();
-            switchService.setChecked(false);
+            if (switchService != null) {
+                switchService.setChecked(false);
+            }
             return;
         }
 
-        // 检查无障碍服务
         if (!isAccessibilityServiceEnabled()) {
             new android.app.AlertDialog.Builder(this)
                     .setTitle("建议开启无障碍服务")
-                    .setMessage("无障碍服务可以让记牌器自动识别打出的牌面，无需手动操作。\n\n是否现在开启？")
+                    .setMessage("无障碍服务可以让记牌器自动识别打出的牌面")
                     .setPositiveButton("去开启", (dialog, which) -> {
                         openAccessibilitySettings();
-                        switchService.setChecked(false);
+                        if (switchService != null) {
+                            switchService.setChecked(false);
+                        }
                     })
                     .setNegativeButton("稍后", (dialog, which) -> {
                         startServiceOnly();
-                        Toast.makeText(this, "记牌器已启动（手动模式）", Toast.LENGTH_LONG).show();
                     })
                     .setCancelable(false)
                     .show();

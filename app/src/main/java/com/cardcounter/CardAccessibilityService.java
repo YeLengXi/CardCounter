@@ -379,7 +379,7 @@ public class CardAccessibilityService extends AccessibilityService {
             // 尝试获取所有辅助功能属性
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 // Android 11+ 可以获取更多属性
-                var stateDescription = node.getStateDescription();
+                CharSequence stateDescription = node.getStateDescription();
                 if (stateDescription != null) {
                     String text = stateDescription.toString();
                     String card = parseSingleCard(text);

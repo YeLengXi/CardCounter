@@ -1,5 +1,6 @@
 package com.cardcounter;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -15,6 +16,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -83,6 +85,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // 从设置返回时，刷新所有状态
         updateServiceStatus();
         if (btnAccessibility != null) {
             updateAccessibilityButton();
@@ -102,24 +105,40 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 检查无障碍服务是否启用
+     * 检查无障碍服务是否启用 - 使用更可靠的方法
      */
     private boolean isAccessibilityServiceEnabled() {
-        String packageName = getPackageName();
-        String serviceName = packageName + "/.CardAccessibilityService";
-        String serviceNameAlt = packageName + "/" + packageName + ".CardAccessibilityService";
+        try {
+            String packageName = getPackageName();
+            String serviceName = CardAccessibilityService.class.getName();
 
-        String enabledServices = Settings.Secure.getString(
-                getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        );
+            // 方法1：通过 AccessibilityServiceInfo 检查
+            List<AccessibilityServiceInfo> enabledServices = ((android.view.accessibility.AccessibilityManager)
+                    getSystemService(Context.ACCESSIBILITY_SERVICE))
+                    .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
 
-        if (enabledServices != null) {
-            // 检查多种可能的格式
-            return enabledServices.contains(serviceName) ||
-                   enabledServices.contains(serviceNameAlt) ||
-                   enabledServices.contains("CardAccessibilityService") ||
-                   enabledServices.contains(packageName);
+            for (AccessibilityServiceInfo service : enabledServices) {
+                String id = service.getId();
+                if (id != null && id.contains(packageName) && id.contains(serviceName)) {
+                    return true;
+                }
+            }
+
+            // 方法2：检查 Settings.Secure 作为备用
+            String enabledServicesStr = Settings.Secure.getString(
+                    getContentResolver(),
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            );
+
+            if (enabledServicesStr != null) {
+                // 检查多种可能的格式
+                return enabledServicesStr.contains(packageName) &&
+                       (enabledServicesStr.contains("CardAccessibilityService") ||
+                        enabledServicesStr.contains("/."));
+            }
+
+        } catch (Exception e) {
+            // 检查失败，返回false
         }
         return false;
     }
@@ -130,7 +149,7 @@ public class MainActivity extends Activity {
     private void openAccessibilitySettings() {
         new android.app.AlertDialog.Builder(this)
                 .setTitle("开启无障碍服务")
-                .setMessage("开启无障碍服务后，记牌器可以自动识别游戏中的牌面。\n\n1. 在设置中找到「记牌器」\n2. 开启无障碍服务开关")
+                .setMessage("开启无障碍服务后，记牌器可以自动识别游戏中的牌面。\n\n1. 在设置中找到「记牌器」\n2. 开启无障碍服务开关\n\n开启后返回此页面即可")
                 .setPositiveButton("去设置", (dialog, which) -> {
                     Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
                     startActivity(intent);
@@ -177,6 +196,9 @@ public class MainActivity extends Activity {
             if (!hasOverlayPermission()) {
                 Toast.makeText(this, "未授予悬浮窗权限", Toast.LENGTH_SHORT).show();
                 finish();
+            } else {
+                // 权限已授予，更新UI
+                updateServiceStatus();
             }
         }
     }
@@ -198,9 +220,11 @@ public class MainActivity extends Activity {
                         switchService.setChecked(false);
                     })
                     .setNegativeButton("稍后", (dialog, which) -> {
+                        // 点击"稍后"直接启动服务
                         startServiceOnly();
-                        Toast.makeText(this, "可以稍后在设置中开启", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "记牌器已启动，可在设置中开启自动识别", Toast.LENGTH_LONG).show();
                     })
+                    .setCancelable(false)
                     .show();
             return;
         }

@@ -2,29 +2,46 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
+    android:orientation="vertical"
     android:background="#DDFFFFFF"
-    android:padding="3dp">
+    android:padding="0dp">
 
-    <!-- 牌面区域 -->
+    <!-- 拖拽条区域 -->
+    <View
+        android:id="@+id/drag_handle"
+        android:layout_width="match_parent"
+        android:layout_height="12dp"
+        android:background="#CC333333"
+        android:layout_gravity="center_horizontal" />
+
+    <!-- 主内容区域 -->
     <LinearLayout
-        android:id="@+id/cards_container"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="2dp" />
+        android:padding="3dp">
 
-    <!-- 关闭按钮 - 调小放在右侧 -->
-    <TextView
-        android:id="@+id/btn_close"
-        android:layout_width="20dp"
-        android:layout_height="20dp"
-        android:layout_marginLeft="2dp"
-        android:layout_gravity="center_vertical"
-        android:text="✕"
-        android:textColor="#E74C3C"
-        android:textSize="14sp"
-        android:gravity="center"
-        android:background="#F0F0F0" />
+        <!-- 牌面区域 -->
+        <LinearLayout
+            android:id="@+id/cards_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="2dp" />
+
+        <!-- 关闭按钮 -->
+        <TextView
+            android:id="@+id/btn_close"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginLeft="2dp"
+            android:layout_gravity="center_vertical"
+            android:text="✕"
+            android:textColor="#E74C3C"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:background="#F0F0F0" />
+
+    </LinearLayout>
 
 </LinearLayout>

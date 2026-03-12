@@ -9,8 +9,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.PixelFormat;
 import android.os.Build;
-import android.os.IBinder;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
@@ -25,7 +25,7 @@ import android.widget.Toast;
 import java.util.Map;
 
 /**
- * 悬浮窗服务
+ * 悬浮窗服务 - 增强保活能力
  */
 public class FloatWindowService extends Service {
 
@@ -36,6 +36,7 @@ public class FloatWindowService extends Service {
     private static FloatWindowService instance;
     private WindowManager windowManager;
     private View floatView;
+    private View dragHandle;
     private WindowManager.LayoutParams params;
 
     private LinearLayout cardsContainer;
@@ -47,14 +48,14 @@ public class FloatWindowService extends Service {
         instance = this;
         uiHandler = new Handler(Looper.getMainLooper());
 
+        Log.d(TAG, "FloatWindowService onCreate");
+
+        // 立即启动前台服务
+        createNotificationChannel();
+        Notification notification = createNotification();
         try {
-            createNotificationChannel();
-            Notification notification = createNotification();
-            if (notification != null) {
-                startForeground(NOTIFICATION_ID, notification);
-            } else {
-                startForeground(NOTIFICATION_ID, new Notification());
-            }
+            startForeground(NOTIFICATION_ID, notification != null ? notification : new Notification());
+            Log.d(TAG, "前台服务已启动");
         } catch (Exception e) {
             Log.e(TAG, "startForeground error", e);
         }
@@ -63,19 +64,42 @@ public class FloatWindowService extends Service {
         uiHandler.postDelayed(this::createFloatWindowSafe, 100);
     }
 
-    private void createFloatWindowSafe() {
-        try {
-            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            createFloatWindow();
-        } catch (Exception e) {
-            Log.e(TAG, "createFloatWindow error", e);
-            showToast("悬浮窗创建失败: " + e.getMessage());
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.d(TAG, "onStartCommand");
+        // 确保前台服务持续运行
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14+ 需要明确声明前台服务类型
+            startForeground(NOTIFICATION_ID, createNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         }
+        // START_STICKY: 服务被杀死后会自动重启
+        // START_REDELIVER_INTENT: 如果服务在处理intent时被杀死，重启后会重新传递intent
+        return START_STICKY;
     }
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        return START_STICKY;
+    public void onTaskRemoved(Intent rootIntent) {
+        Log.d(TAG, "onTaskRemoved - 应用被从最近任务中移除");
+        // 重新启动服务，保持服务运行
+        Intent restartIntent = new Intent(getApplicationContext(), FloatWindowService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(restartIntent);
+        } else {
+            startService(restartIntent);
+        }
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override
+    public void onLowMemory() {
+        Log.d(TAG, "onLowMemory - 系统内存不足");
+        super.onLowMemory();
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        Log.d(TAG, "onTrimMemory - level: " + level);
+        super.onTrimMemory(level);
     }
 
     @Override
@@ -85,6 +109,7 @@ public class FloatWindowService extends Service {
 
     @Override
     public void onDestroy() {
+        Log.d(TAG, "onDestroy - 服务被销毁");
         super.onDestroy();
 
         try {
@@ -94,6 +119,17 @@ public class FloatWindowService extends Service {
         } catch (Exception e) {
             Log.e(TAG, "removeView error", e);
         }
+
+        // 尝试重启服务
+        if (instance != null) {
+            Intent restartIntent = new Intent(getApplicationContext(), FloatWindowService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartIntent);
+            } else {
+                startService(restartIntent);
+            }
+        }
+
         instance = null;
     }
 
@@ -107,7 +143,6 @@ public class FloatWindowService extends Service {
 
     /**
      * 处理无障碍服务识别到的牌面
-     * 直接减去识别到的牌数
      */
     public void onCardsRecognized(Map<String, Integer> playedCards) {
         if (playedCards == null || playedCards.isEmpty()) {
@@ -119,24 +154,19 @@ public class FloatWindowService extends Service {
 
             CardDataManager dataManager = CardDataManager.getInstance();
 
-            // 遍历识别到的每种牌，直接扣减
             for (Map.Entry<String, Integer> entry : playedCards.entrySet()) {
                 String card = entry.getKey();
                 int count = entry.getValue();
 
-                // 逐张扣减
                 for (int i = 0; i < count; i++) {
                     int currentCount = dataManager.getCardCount(card);
                     if (currentCount > 0) {
                         dataManager.removeCard(card);
                         Log.d(TAG, "扣减: " + card + " (剩余: " + dataManager.getCardCount(card) + ")");
-                    } else {
-                        Log.w(TAG, "牌 " + card + " 已为0，跳过扣减");
                     }
                 }
             }
 
-            // 更新界面
             updateAllCards();
 
         } catch (Exception e) {
@@ -150,9 +180,11 @@ public class FloatWindowService extends Service {
                 NotificationChannel channel = new NotificationChannel(
                         CHANNEL_ID,
                         "记牌器",
-                        NotificationManager.IMPORTANCE_LOW
+                        NotificationManager.IMPORTANCE_HIGH  // 提高重要性
                 );
-                channel.setDescription("记牌器悬浮窗服务");
+                channel.setDescription("记牌器悬浮窗服务 - 保持运行以实现自动记牌");
+                channel.setShowBadge(false);
+                channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
 
                 NotificationManager manager = getSystemService(NotificationManager.class);
                 if (manager != null) {
@@ -168,12 +200,15 @@ public class FloatWindowService extends Service {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 boolean accessibilityEnabled = CardAccessibilityService.isEnabled();
-                Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
-                        .setContentTitle("记牌器运行中")
-                        .setContentText(accessibilityEnabled ? "自动识别已启用" : "手动模式")
-                        .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                        .setOngoing(true);
 
+                Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
+                        .setContentTitle("🃏 记牌器运行中")
+                        .setContentText(accessibilityEnabled ? "自动识别已启用" : "手动模式 - 点击牌面减1")
+                        .setSmallIcon(android.R.drawable.ic_menu_info_details)
+                        .setOngoing(true)  // 不可清除
+                        .setAutoCancel(false);
+
+                // Android 13+ 需要设置通知权限
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     Intent notificationIntent = new Intent(this, MainActivity.class);
                     notificationIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -191,10 +226,22 @@ public class FloatWindowService extends Service {
         return null;
     }
 
+    private void createFloatWindowSafe() {
+        try {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            createFloatWindow();
+        } catch (Exception e) {
+            Log.e(TAG, "createFloatWindow error", e);
+            showToast("悬浮窗创建失败: " + e.getMessage());
+        }
+    }
+
     private void createFloatWindow() {
         try {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
             floatView = inflater.inflate(R.layout.float_window, null);
+
+            dragHandle = floatView.findViewById(R.id.drag_handle);
 
             // 获取保存的位置
             SharedPreferences prefs = getSharedPreferences("float_window", Context.MODE_PRIVATE);
@@ -216,13 +263,13 @@ public class FloatWindowService extends Service {
             if (savedX != -1) {
                 params.x = savedX;
             } else {
-                params.x = getScreenWidth() - 300;
+                params.x = getScreenWidth() - 350;
             }
             params.y = savedY;
 
             initFloatViews();
 
-            // 设置拖拽监听
+            // 只在拖拽条上设置拖拽监听
             setupDragListener();
 
             // 添加到窗口
@@ -239,11 +286,70 @@ public class FloatWindowService extends Service {
         }
     }
 
+    /**
+     * 设置拖拽监听 - 只在拖拽条上响应
+     */
+    private void setupDragListener() {
+        if (dragHandle == null) {
+            Log.w(TAG, "拖拽条未找到");
+            return;
+        }
+
+        dragHandle.setOnTouchListener(new View.OnTouchListener() {
+            private int initialX, initialY;
+            private float initialTouchX, initialTouchY;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                try {
+                    switch (event.getAction()) {
+                        case MotionEvent.ACTION_DOWN:
+                            initialX = params.x;
+                            initialY = params.y;
+                            initialTouchX = event.getRawX();
+                            initialTouchY = event.getRawY();
+                            return true;
+
+                        case MotionEvent.ACTION_MOVE:
+                            float deltaX = event.getRawX() - initialTouchX;
+                            float deltaY = event.getRawY() - initialTouchY;
+
+                            params.x = initialX + (int) deltaX;
+                            params.y = initialY + (int) deltaY;
+
+                            // 限制在屏幕范围内
+                            int screenWidth = getScreenWidth();
+                            int windowHeight = getWindowHeight();
+                            int viewWidth = floatView.getWidth();
+                            int viewHeight = floatView.getHeight();
+
+                            if (params.x < 0) params.x = 0;
+                            if (params.x + viewWidth > screenWidth) params.x = screenWidth - viewWidth;
+                            if (params.y < 0) params.y = 0;
+                            if (params.y + viewHeight > windowHeight) params.y = windowHeight - viewHeight;
+
+                            windowManager.updateViewLayout(floatView, params);
+                            return true;
+
+                        case MotionEvent.ACTION_UP:
+                        case MotionEvent.ACTION_CANCEL:
+                            savePosition(params.x, params.y);
+                            return true;
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "拖拽异常", e);
+                }
+                return false;
+            }
+        });
+
+        Log.d(TAG, "拖拽监听已设置");
+    }
+
     private void setupAccessibilityCallback() {
         try {
             if (CardAccessibilityService.isEnabled()) {
                 CardAccessibilityService.getInstance().setCallback(playedCards -> {
-                    // 在主线程处理
                     uiHandler.post(() -> {
                         try {
                             onCardsRecognized(playedCards);
@@ -327,7 +433,6 @@ public class FloatWindowService extends Service {
             tvCount.setText(String.valueOf(count));
         }
 
-        // 根据数量设置颜色
         int bgColor;
         int countColor;
         if (count == 0) {
@@ -359,9 +464,6 @@ public class FloatWindowService extends Service {
         }
     }
 
-    /**
-     * 更新所有牌
-     */
     public void updateAllCards() {
         if (uiHandler == null || cardsContainer == null) return;
 
@@ -377,67 +479,6 @@ public class FloatWindowService extends Service {
                 }
             } catch (Exception e) {
                 Log.e(TAG, "更新界面异常", e);
-            }
-        });
-    }
-
-    /**
-     * 设置拖拽监听
-     */
-    private void setupDragListener() {
-        if (floatView == null) return;
-
-        floatView.setOnTouchListener(new View.OnTouchListener() {
-            private int initialX, initialY;
-            private float initialTouchX, initialTouchY;
-            private boolean isDragging = false;
-
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                try {
-                    switch (event.getAction()) {
-                        case MotionEvent.ACTION_DOWN:
-                            initialX = params.x;
-                            initialY = params.y;
-                            initialTouchX = event.getRawX();
-                            initialTouchY = event.getRawY();
-                            isDragging = false;
-                            return true;
-
-                        case MotionEvent.ACTION_MOVE:
-                            float deltaX = event.getRawX() - initialTouchX;
-                            float deltaY = event.getRawY() - initialTouchY;
-
-                            if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
-                                isDragging = true;
-
-                                params.x = initialX + (int) deltaX;
-                                params.y = initialY + (int) deltaY;
-
-                                // 限制在屏幕范围内
-                                int screenWidth = getScreenWidth();
-                                int windowHeight = getWindowHeight();
-                                int viewWidth = floatView.getWidth();
-                                int viewHeight = floatView.getHeight();
-
-                                if (params.x < 0) params.x = 0;
-                                if (params.x + viewWidth > screenWidth) params.x = screenWidth - viewWidth;
-                                if (params.y < 0) params.y = 0;
-                                if (params.y + viewHeight > windowHeight) params.y = windowHeight - viewHeight;
-
-                                windowManager.updateViewLayout(floatView, params);
-                            }
-                            return true;
-
-                        case MotionEvent.ACTION_UP:
-                            savePosition(params.x, params.y);
-                            isDragging = false;
-                            return true;
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "拖拽异常", e);
-                }
-                return false;
             }
         });
     }

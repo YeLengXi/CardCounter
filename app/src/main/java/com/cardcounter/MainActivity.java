@@ -8,7 +8,7 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
-import android.Switch;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 

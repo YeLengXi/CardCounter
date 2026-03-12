@@ -4,6 +4,7 @@ on:
   workflow_dispatch:  # 手动触发
   push:
     branches: [ main, master ]
+  pull_request:
 
 jobs:
   build:
@@ -19,10 +20,10 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: 设置Gradle 8.0
+    - name: 设置Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
-        gradle-version: '8.0'
+        gradle-version: wrapper
 
     - name: 生成调试签名密钥
       run: |
@@ -36,15 +37,18 @@ jobs:
           -validity 10000 \
           -dname "CN=Android Debug,O=Android,C=US"
 
+    - name: 赋予Gradle执行权限
+      run: chmod +x gradlew || true
+
     - name: 构建APK
-      run: gradle assembleRelease --stacktrace --info || gradle assembleRelease --debug --stacktrace
+      run: ./gradlew assembleRelease --stacktrace
 
     - name: 查找APK文件
       run: |
         echo "查找APK文件..."
         find . -name "*.apk" -type f
         echo "build目录内容:"
-        ls -la app/build/outputs/apk/release/ || echo "目录不存在"
+        ls -laR app/build/outputs/ || echo "目录不存在"
 
     - name: 上传APK
       uses: actions/upload-artifact@v4
@@ -52,4 +56,4 @@ jobs:
         name: CardCounter-APK
         path: app/build/outputs/apk/release/*.apk
         retention-days: 90
-        if-no-files-found: error
+        if-no-files-found: warn

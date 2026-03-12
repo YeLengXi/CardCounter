@@ -10,6 +10,8 @@ import android.content.SharedPreferences;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -23,11 +25,11 @@ import android.widget.Toast;
 import java.util.Map;
 
 /**
- * 悬浮窗服务 - 使用无障碍服务自动识别
+ * 悬浮窗服务
  */
 public class FloatWindowService extends Service {
 
-    private static final String TAG = "FloatWindowService";
+    private static final String TAG = "FloatWindow";
     private static final String CHANNEL_ID = "CardCounterChannel";
     private static final int NOTIFICATION_ID = 1001;
 
@@ -37,11 +39,13 @@ public class FloatWindowService extends Service {
     private WindowManager.LayoutParams params;
 
     private LinearLayout cardsContainer;
+    private Handler uiHandler;
 
     @Override
     public void onCreate() {
         super.onCreate();
         instance = this;
+        uiHandler = new Handler(Looper.getMainLooper());
 
         try {
             createNotificationChannel();
@@ -56,7 +60,7 @@ public class FloatWindowService extends Service {
         }
 
         // 延迟创建悬浮窗
-        new android.os.Handler().postDelayed(this::createFloatWindowSafe, 100);
+        uiHandler.postDelayed(this::createFloatWindowSafe, 100);
     }
 
     private void createFloatWindowSafe() {
@@ -65,7 +69,7 @@ public class FloatWindowService extends Service {
             createFloatWindow();
         } catch (Exception e) {
             Log.e(TAG, "createFloatWindow error", e);
-            Toast.makeText(this, "悬浮窗创建失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showToast("悬浮窗创建失败: " + e.getMessage());
         }
     }
 
@@ -83,8 +87,12 @@ public class FloatWindowService extends Service {
     public void onDestroy() {
         super.onDestroy();
 
-        if (windowManager != null && floatView != null) {
-            windowManager.removeView(floatView);
+        try {
+            if (windowManager != null && floatView != null) {
+                windowManager.removeView(floatView);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "removeView error", e);
         }
         instance = null;
     }
@@ -99,36 +107,41 @@ public class FloatWindowService extends Service {
 
     /**
      * 处理无障碍服务识别到的牌面
+     * 直接减去识别到的牌数
      */
     public void onCardsRecognized(Map<String, Integer> playedCards) {
         if (playedCards == null || playedCards.isEmpty()) {
             return;
         }
 
-        // 计算需要扣除的牌数
-        CardDataManager dataManager = CardDataManager.getInstance();
+        try {
+            Log.d(TAG, "收到识别到的牌: " + playedCards);
 
-        for (Map.Entry<String, Integer> entry : playedCards.entrySet()) {
-            String card = entry.getKey();
-            int recognizedCount = entry.getValue();
+            CardDataManager dataManager = CardDataManager.getInstance();
 
-            // 获取当前剩余数量
-            int currentCount = dataManager.getCardCount(card);
-            int initialCount = dataManager.getInitialCount(card);
-            int actualPlayedCount = initialCount - currentCount;
+            // 遍历识别到的每种牌，直接扣减
+            for (Map.Entry<String, Integer> entry : playedCards.entrySet()) {
+                String card = entry.getKey();
+                int count = entry.getValue();
 
-            // 如果识别出的数量大于已出牌数，说明有新牌被打出
-            if (recognizedCount > actualPlayedCount) {
-                int newPlayedCount = recognizedCount - actualPlayedCount;
-                for (int i = 0; i < newPlayedCount; i++) {
-                    dataManager.removeCard(card);
+                // 逐张扣减
+                for (int i = 0; i < count; i++) {
+                    int currentCount = dataManager.getCardCount(card);
+                    if (currentCount > 0) {
+                        dataManager.removeCard(card);
+                        Log.d(TAG, "扣减: " + card + " (剩余: " + dataManager.getCardCount(card) + ")");
+                    } else {
+                        Log.w(TAG, "牌 " + card + " 已为0，跳过扣减");
+                    }
                 }
-                Log.d(TAG, "自动扣除: " + card + " x" + newPlayedCount);
             }
-        }
 
-        // 更新界面
-        updateAllCards();
+            // 更新界面
+            updateAllCards();
+
+        } catch (Exception e) {
+            Log.e(TAG, "onCardsRecognized 异常: " + e.getMessage());
+        }
     }
 
     private void createNotificationChannel() {
@@ -157,7 +170,7 @@ public class FloatWindowService extends Service {
                 boolean accessibilityEnabled = CardAccessibilityService.isEnabled();
                 Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
                         .setContentTitle("记牌器运行中")
-                        .setContentText(accessibilityEnabled ? "自动识别已启用" : "点击数字减少")
+                        .setContentText(accessibilityEnabled ? "自动识别已启用" : "手动模式")
                         .setSmallIcon(android.R.drawable.ic_menu_info_details)
                         .setOngoing(true);
 
@@ -216,15 +229,33 @@ public class FloatWindowService extends Service {
             windowManager.addView(floatView, params);
 
             // 设置无障碍服务回调
-            if (CardAccessibilityService.isEnabled()) {
-                CardAccessibilityService.getInstance().setCallback(playedCards -> {
-                    onCardsRecognized(playedCards);
-                });
-            }
+            setupAccessibilityCallback();
+
+            Log.d(TAG, "悬浮窗创建成功");
 
         } catch (Exception e) {
             Log.e(TAG, "addView error", e);
-            Toast.makeText(this, "悬浮窗添加失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showToast("悬浮窗添加失败: " + e.getMessage());
+        }
+    }
+
+    private void setupAccessibilityCallback() {
+        try {
+            if (CardAccessibilityService.isEnabled()) {
+                CardAccessibilityService.getInstance().setCallback(playedCards -> {
+                    // 在主线程处理
+                    uiHandler.post(() -> {
+                        try {
+                            onCardsRecognized(playedCards);
+                        } catch (Exception e) {
+                            Log.e(TAG, "回调处理异常: " + e.getMessage());
+                        }
+                    });
+                });
+                Log.d(TAG, "无障碍服务回调已设置");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "设置回调异常: " + e.getMessage());
         }
     }
 
@@ -235,7 +266,11 @@ public class FloatWindowService extends Service {
         View btnClose = floatView.findViewById(R.id.btn_close);
         if (btnClose != null) {
             btnClose.setOnClickListener(v -> {
-                stopSelf();
+                try {
+                    stopSelf();
+                } catch (Exception e) {
+                    Log.e(TAG, "停止服务异常", e);
+                }
             });
         }
 
@@ -262,14 +297,22 @@ public class FloatWindowService extends Service {
 
         // 点击减少
         view.setOnClickListener(v -> {
-            CardDataManager.getInstance().removeCard(cardName);
-            updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
+            try {
+                CardDataManager.getInstance().removeCard(cardName);
+                updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
+            } catch (Exception e) {
+                Log.e(TAG, "点击减牌异常", e);
+            }
         });
 
         // 长按增加
         view.setOnLongClickListener(v -> {
-            CardDataManager.getInstance().addCard(cardName);
-            updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
+            try {
+                CardDataManager.getInstance().addCard(cardName);
+                updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
+            } catch (Exception e) {
+                Log.e(TAG, "长按加牌异常", e);
+            }
             return true;
         });
 
@@ -320,16 +363,22 @@ public class FloatWindowService extends Service {
      * 更新所有牌
      */
     public void updateAllCards() {
-        if (cardsContainer == null) return;
+        if (uiHandler == null || cardsContainer == null) return;
 
-        for (int i = 0; i < cardsContainer.getChildCount(); i++) {
-            View child = cardsContainer.getChildAt(i);
-            TextView tvName = child.findViewById(R.id.tv_card_name);
-            if (tvName != null) {
-                String cardName = tvName.getText().toString();
-                updateCardDisplay(child, cardName, CardDataManager.getInstance().getCardCount(cardName));
+        uiHandler.post(() -> {
+            try {
+                for (int i = 0; i < cardsContainer.getChildCount(); i++) {
+                    View child = cardsContainer.getChildAt(i);
+                    TextView tvName = child.findViewById(R.id.tv_card_name);
+                    if (tvName != null) {
+                        String cardName = tvName.getText().toString();
+                        updateCardDisplay(child, cardName, CardDataManager.getInstance().getCardCount(cardName));
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "更新界面异常", e);
             }
-        }
+        });
     }
 
     /**
@@ -345,44 +394,48 @@ public class FloatWindowService extends Service {
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        initialX = params.x;
-                        initialY = params.y;
-                        initialTouchX = event.getRawX();
-                        initialTouchY = event.getRawY();
-                        isDragging = false;
-                        return true;
+                try {
+                    switch (event.getAction()) {
+                        case MotionEvent.ACTION_DOWN:
+                            initialX = params.x;
+                            initialY = params.y;
+                            initialTouchX = event.getRawX();
+                            initialTouchY = event.getRawY();
+                            isDragging = false;
+                            return true;
 
-                    case MotionEvent.ACTION_MOVE:
-                        float deltaX = event.getRawX() - initialTouchX;
-                        float deltaY = event.getRawY() - initialTouchY;
+                        case MotionEvent.ACTION_MOVE:
+                            float deltaX = event.getRawX() - initialTouchX;
+                            float deltaY = event.getRawY() - initialTouchY;
 
-                        if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
-                            isDragging = true;
+                            if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+                                isDragging = true;
 
-                            params.x = initialX + (int) deltaX;
-                            params.y = initialY + (int) deltaY;
+                                params.x = initialX + (int) deltaX;
+                                params.y = initialY + (int) deltaY;
 
-                            // 限制在屏幕范围内
-                            int screenWidth = getScreenWidth();
-                            int windowHeight = getWindowHeight();
-                            int viewWidth = floatView.getWidth();
-                            int viewHeight = floatView.getHeight();
+                                // 限制在屏幕范围内
+                                int screenWidth = getScreenWidth();
+                                int windowHeight = getWindowHeight();
+                                int viewWidth = floatView.getWidth();
+                                int viewHeight = floatView.getHeight();
 
-                            if (params.x < 0) params.x = 0;
-                            if (params.x + viewWidth > screenWidth) params.x = screenWidth - viewWidth;
-                            if (params.y < 0) params.y = 0;
-                            if (params.y + viewHeight > windowHeight) params.y = windowHeight - viewHeight;
+                                if (params.x < 0) params.x = 0;
+                                if (params.x + viewWidth > screenWidth) params.x = screenWidth - viewWidth;
+                                if (params.y < 0) params.y = 0;
+                                if (params.y + viewHeight > windowHeight) params.y = windowHeight - viewHeight;
 
-                            windowManager.updateViewLayout(floatView, params);
-                        }
-                        return true;
+                                windowManager.updateViewLayout(floatView, params);
+                            }
+                            return true;
 
-                    case MotionEvent.ACTION_UP:
-                        savePosition(params.x, params.y);
-                        isDragging = false;
-                        return true;
+                        case MotionEvent.ACTION_UP:
+                            savePosition(params.x, params.y);
+                            isDragging = false;
+                            return true;
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "拖拽异常", e);
                 }
                 return false;
             }
@@ -416,5 +469,11 @@ public class FloatWindowService extends Service {
             }
         }
         return 1920;
+    }
+
+    private void showToast(final String message) {
+        if (uiHandler != null) {
+            uiHandler.post(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+        }
     }
 }

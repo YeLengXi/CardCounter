@@ -32,16 +32,13 @@ public class CardAccessibilityService extends AccessibilityService {
     private CardDataCallback callback;
     private Handler checkHandler;
     private Runnable checkRunnable;
-    private static final int CHECK_INTERVAL = 1000; // 每1秒检查一次
-
-    // 记录已处理的牌（用于去重）
-    private Set<String> processedCardHashes = new HashSet<>();
-
-    // 当前是否在游戏中
-    private boolean isInGame = false;
+    private static final int CHECK_INTERVAL = 800; // 每0.8秒检查一次
 
     // 上次识别到的牌（用于检测新出的牌）
     private Map<String, Integer> lastRecognizedCards = new HashMap<>();
+
+    // 调试模式开关
+    private static boolean DEBUG_MODE = true;
 
     public interface CardDataCallback {
         void onCardsFound(Map<String, Integer> cards);
@@ -60,14 +57,10 @@ public class CardAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * 重置游戏状态（新一局游戏开始时调用）
+     * 重置游戏状态
      */
     public void resetGame() {
-        synchronized (processedCardHashes) {
-            processedCardHashes.clear();
-        }
         lastRecognizedCards.clear();
-        isInGame = false;
         Log.d(TAG, "游戏状态已重置");
     }
 
@@ -110,14 +103,6 @@ public class CardAccessibilityService extends AccessibilityService {
             if (isTargetApp) {
                 int eventType = event.getEventType();
 
-                // 窗口状态变化可能是新游戏开始
-                if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                    // 检测是否离开游戏界面，重置状态
-                    if (!isInGameWindow(packageName)) {
-                        // 可能离开了游戏，但不一定要重置
-                    }
-                }
-
                 // 界面内容变化时立即检查
                 if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
                     eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -128,62 +113,6 @@ public class CardAccessibilityService extends AccessibilityService {
         } catch (Exception e) {
             Log.e(TAG, "处理事件失败: " + e.getMessage());
         }
-    }
-
-    /**
-     * 检查当前是否在游戏窗口
-     */
-    private boolean isInGameWindow(String packageName) {
-        try {
-            AccessibilityNodeInfo root = getRootInActiveWindow();
-            if (root == null) return false;
-
-            // 检查是否包含游戏相关的文字
-            boolean inGame = false;
-            String gameKeywords[] = {"斗地主", "出牌", "不出", "提示", "抢地主", "不抢"};
-            for (String keyword : gameKeywords) {
-                if (containsText(root, keyword)) {
-                    inGame = true;
-                    break;
-                }
-            }
-
-            root.recycle();
-            return inGame;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    /**
-     * 检查节点树中是否包含指定文字
-     */
-    private boolean containsText(AccessibilityNodeInfo node, String text) {
-        if (node == null) return false;
-
-        try {
-            CharSequence nodeText = node.getText();
-            if (nodeText != null && nodeText.toString().contains(text)) {
-                return true;
-            }
-
-            CharSequence contentDesc = node.getContentDescription();
-            if (contentDesc != null && contentDesc.toString().contains(text)) {
-                return true;
-            }
-
-            for (int i = 0; i < node.getChildCount(); i++) {
-                AccessibilityNodeInfo child = node.getChild(i);
-                if (child != null) {
-                    boolean found = containsText(child, text);
-                    child.recycle();
-                    if (found) return true;
-                }
-            }
-        } catch (Exception e) {
-            // 忽略
-        }
-        return false;
     }
 
     @Override
@@ -211,20 +140,31 @@ public class CardAccessibilityService extends AccessibilityService {
                 return;
             }
 
-            // 提取当前界面上的牌
-            Map<String, Integer> currentCards = extractCardsFromNodes(root);
-            root.recycle();
-
-            if (currentCards.isEmpty()) {
-                // 没有检测到牌，可能不在游戏中
+            // 检查当前包名
+            CharSequence packageName = root.getPackageName();
+            if (packageName == null || !packageName.toString().contains("tencent")) {
+                root.recycle();
                 return;
             }
 
-            // 检测新出的牌（对比上次识别的结果）
+            // 提取当前界面上的牌
+            Map<String, Integer> currentCards = extractCardsFromNodes(root);
+
+            if (DEBUG_MODE && !currentCards.isEmpty()) {
+                Log.d(TAG, "当前识别到的牌: " + currentCards);
+            }
+
+            root.recycle();
+
+            if (currentCards.isEmpty()) {
+                return;
+            }
+
+            // 检测新出的牌
             Map<String, Integer> newCards = detectNewCards(currentCards);
 
             if (!newCards.isEmpty()) {
-                Log.d(TAG, "检测到新出的牌: " + newCards);
+                Log.d(TAG, "★ 检测到新出的牌: " + newCards);
 
                 if (callback != null) {
                     try {
@@ -245,7 +185,6 @@ public class CardAccessibilityService extends AccessibilityService {
 
     /**
      * 检测新出的牌
-     * 对比当前识别的牌和上次识别的牌，找出新增的
      */
     private Map<String, Integer> detectNewCards(Map<String, Integer> currentCards) {
         Map<String, Integer> newCards = new HashMap<>();
@@ -256,19 +195,7 @@ public class CardAccessibilityService extends AccessibilityService {
             int lastCount = lastRecognizedCards.getOrDefault(card, 0);
 
             if (currentCount > lastCount) {
-                // 数量增加了，说明有新牌被打出
                 newCards.put(card, currentCount - lastCount);
-            }
-        }
-
-        // 检查上次存在但现在不存在的牌（可能是连续出牌后消失了）
-        for (Map.Entry<String, Integer> entry : lastRecognizedCards.entrySet()) {
-            String card = entry.getKey();
-            int lastCount = entry.getValue();
-            int currentCount = currentCards.getOrDefault(card, 0);
-
-            if (currentCount < lastCount) {
-                // 牌减少了，可能需要记录（但这种情况通常不会发生）
             }
         }
 
@@ -277,14 +204,19 @@ public class CardAccessibilityService extends AccessibilityService {
 
     /**
      * 从节点中提取牌面信息
-     * 使用节点哈希去重，避免重复计数
      */
     private Map<String, Integer> extractCardsFromNodes(AccessibilityNodeInfo root) {
         Map<String, Integer> cards = new HashMap<>();
-        Set<String> nodeHashes = new HashSet<>();
 
         try {
-            traverseAndCollectCards(root, cards, nodeHashes, 0);
+            // 先尝试检测是否在游戏中
+            if (!isInGame(root)) {
+                return cards;
+            }
+
+            // 深度遍历所有节点
+            traverseAllNodes(root, cards, 0);
+
         } catch (Exception e) {
             Log.e(TAG, "提取牌面异常: " + e.getMessage());
         }
@@ -293,36 +225,70 @@ public class CardAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * 递归遍历节点并收集牌面信息
+     * 检查是否在游戏中
      */
-    private void traverseAndCollectCards(AccessibilityNodeInfo node, Map<String, Integer> cards,
-                                         Set<String> nodeHashes, int depth) {
-        if (node == null || depth > 15) {
+    private boolean isInGame(AccessibilityNodeInfo root) {
+        // 检查是否包含游戏相关的关键字
+        String[] gameKeywords = {"斗地主", "出牌", "不出", "提示", "抢地主", "不抢", "明牌", "叫地主"};
+        return containsAnyText(root, gameKeywords);
+    }
+
+    /**
+     * 检查节点树中是否包含任意指定文字
+     */
+    private boolean containsAnyText(AccessibilityNodeInfo node, String[] keywords) {
+        if (node == null) return false;
+
+        try {
+            CharSequence text = node.getText();
+            CharSequence contentDesc = node.getContentDescription();
+
+            for (String keyword : keywords) {
+                if ((text != null && text.toString().contains(keyword)) ||
+                    (contentDesc != null && contentDesc.toString().contains(keyword))) {
+                    return true;
+                }
+            }
+
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) {
+                    boolean found = containsAnyText(child, keywords);
+                    child.recycle();
+                    if (found) return true;
+                }
+            }
+        } catch (Exception e) {
+            // 忽略
+        }
+        return false;
+    }
+
+    /**
+     * 递归遍历所有节点并提取牌面
+     */
+    private void traverseAllNodes(AccessibilityNodeInfo node, Map<String, Integer> cards, int depth) {
+        if (node == null || depth > 30) {
             return;
         }
 
         try {
-            // 获取节点文字
-            String textContent = getNodeText(node);
+            // 获取所有可能的文字来源
+            String text = getNodeText(node);
 
-            if (textContent != null && !textContent.isEmpty()) {
-                // 解析这个节点的牌面
-                Map<String, Integer> nodeCards = parseCardsFromText(textContent);
-
-                // 使用节点哈希防止重复计数
-                String nodeHash = getNodeHash(node, textContent);
-                if (!nodeHashes.contains(nodeHash)) {
-                    nodeHashes.add(nodeHash);
-
-                    // 累加牌数
-                    for (Map.Entry<String, Integer> entry : nodeCards.entrySet()) {
-                        String card = entry.getKey();
-                        int count = entry.getValue();
-                        cards.put(card, cards.getOrDefault(card, 0) + count);
-                    }
-
+            if (text != null && !text.isEmpty()) {
+                // 过滤掉太长的文字（可能是整段话）
+                if (text.length() < 50) {
+                    Map<String, Integer> nodeCards = parseCardsFromText(text);
                     if (!nodeCards.isEmpty()) {
-                        Log.d(TAG, "节点 [" + depth + "] 文字: '" + textContent + "' -> 牌: " + nodeCards);
+                        for (Map.Entry<String, Integer> entry : nodeCards.entrySet()) {
+                            String card = entry.getKey();
+                            int count = entry.getValue();
+                            cards.put(card, cards.getOrDefault(card, 0) + count);
+                        }
+                        if (DEBUG_MODE) {
+                            Log.d(TAG, "[深度" + depth + "] 文字: '" + text + "' -> 牌: " + nodeCards);
+                        }
                     }
                 }
             }
@@ -331,7 +297,7 @@ public class CardAccessibilityService extends AccessibilityService {
             for (int i = 0; i < node.getChildCount(); i++) {
                 AccessibilityNodeInfo child = node.getChild(i);
                 if (child != null) {
-                    traverseAndCollectCards(child, cards, nodeHashes, depth + 1);
+                    traverseAllNodes(child, cards, depth + 1);
                     child.recycle();
                 }
             }
@@ -342,22 +308,35 @@ public class CardAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * 获取节点的文字内容
+     * 获取节点的文字内容（多种来源）
      */
     private String getNodeText(AccessibilityNodeInfo node) {
         StringBuilder sb = new StringBuilder();
 
         try {
+            // 1. text属性
             CharSequence text = node.getText();
             if (text != null) {
                 sb.append(text);
             }
 
+            // 2. contentDescription属性
             CharSequence contentDescription = node.getContentDescription();
             if (contentDescription != null) {
                 if (sb.length() > 0) sb.append(" ");
                 sb.append(contentDescription);
             }
+
+            // 3. className - 某些情况下className包含有用信息
+            CharSequence className = node.getClassName();
+            if (className != null) {
+                String cn = className.toString();
+                // 只处理包含Button、Text等UI元素的className
+                if (cn.contains("Button") || cn.contains("Text") || cn.contains("Image")) {
+                    // sb.append(" [").append(cn).append("]");
+                }
+            }
+
         } catch (Exception e) {
             // 忽略
         }
@@ -366,28 +345,8 @@ public class CardAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * 生成节点的唯一哈希标识
-     */
-    private String getNodeHash(AccessibilityNodeInfo node, String text) {
-        try {
-            int hashCode = 0;
-            if (text != null) {
-                hashCode = text.hashCode();
-            }
-
-            // 获取节点在屏幕上的位置作为额外标识
-            android.graphics.Rect bounds = new android.graphics.Rect();
-            node.getBoundsInScreen(bounds);
-
-            return text + "_" + bounds.left + "_" + bounds.top + "_" + hashCode;
-        } catch (Exception e) {
-            return String.valueOf(System.currentTimeMillis());
-        }
-    }
-
-    /**
      * 从文字中解析牌面信息
-     * 支持多种格式：单独牌名、连续牌名、组合等
+     * 支持多种格式
      */
     private Map<String, Integer> parseCardsFromText(String text) {
         Map<String, Integer> cards = new HashMap<>();
@@ -404,15 +363,16 @@ public class CardAccessibilityService extends AccessibilityService {
                 .replaceAll("\\s+", " ");
 
         // 过滤掉明显不是牌面的文字
-        if (text.length() > 50 || text.contains("http") || text.contains("www")) {
+        if (text.length() > 50 || text.contains("http") || text.contains("www") ||
+            text.contains("微信") || text.contains("游戏") || text.contains("开始")) {
             return cards;
         }
 
         // 1. 匹配大小王
-        if (text.contains("小王")) {
+        if (text.contains("小王") || text.toLowerCase().contains("xiaowang")) {
             cards.put("小王", cards.getOrDefault("小王", 0) + 1);
         }
-        if (text.contains("大王")) {
+        if (text.contains("大王") || text.toLowerCase().contains("dawang")) {
             cards.put("大王", cards.getOrDefault("大王", 0) + 1);
         }
 
@@ -424,7 +384,7 @@ public class CardAccessibilityService extends AccessibilityService {
             cards.put(card, cards.getOrDefault(card, 0) + 1);
         }
 
-        // 3. 匹配 J, Q, K, A, 2, j, q, k, a
+        // 3. 匹配 J, Q, K, A, 2（大小写都支持）
         Pattern letterPattern = Pattern.compile("\\b([JQKA2jqka2])\\b");
         Matcher letterMatcher = letterPattern.matcher(text);
         while (letterMatcher.find()) {
@@ -432,31 +392,27 @@ public class CardAccessibilityService extends AccessibilityService {
             cards.put(card, cards.getOrDefault(card, 0) + 1);
         }
 
-        // 4. 处理连续相同字符（如 "333" 表示三张3）
+        // 4. 匹配连续的相同字符（如 "333" 表示三张3）
         for (String card : new String[]{"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"}) {
-            // 先移除已经单独匹配的
-            int baseCount = cards.getOrDefault(card, 0);
-
             Pattern repeatPattern = Pattern.compile("(" + card + "){2,}");
             Matcher repeatMatcher = repeatPattern.matcher(text);
             while (repeatMatcher.find()) {
                 String matched = repeatMatcher.group(0);
                 int repeatCount = countRepeats(matched, card);
                 if (repeatCount > 1) {
-                    // 累加重复数量
-                    cards.put(card, baseCount + repeatCount);
+                    cards.put(card, Math.max(cards.getOrDefault(card, 0), repeatCount));
                 }
             }
         }
 
-        // 5. 特殊处理：中文数字牌
-        Pattern chineseNumPattern = Pattern.compile("[三四五六七八九十]+");
-        Matcher chineseMatcher = chineseNumPattern.matcher(text);
-        if (chineseMatcher.find()) {
+        // 5. 匹配中文数字牌（三、四、五等）
+        Pattern chinesePattern = Pattern.compile("[三四五六七八九十]");
+        Matcher chineseMatcher = chinesePattern.matcher(text);
+        while (chineseMatcher.find()) {
             String chinese = chineseMatcher.group();
-            Map<String, Integer> converted = convertChineseCards(chinese);
-            for (Map.Entry<String, Integer> entry : converted.entrySet()) {
-                cards.put(entry.getKey(), cards.getOrDefault(entry.getKey(), 0) + entry.getValue());
+            String card = chineseToCard(chinese);
+            if (card != null) {
+                cards.put(card, cards.getOrDefault(card, 0) + 1);
             }
         }
 
@@ -470,7 +426,7 @@ public class CardAccessibilityService extends AccessibilityService {
         int count = 0;
         int index = 0;
         while (index <= text.length() - card.length()) {
-            if (text.substring(index, index + card.length()).equals(card)) {
+            if (text.substring(index, index + card.length()).equalsIgnoreCase(card)) {
                 count++;
                 index += card.length();
             } else {
@@ -481,30 +437,32 @@ public class CardAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * 转换中文牌名
+     * 中文数字转牌面
      */
-    private Map<String, Integer> convertChineseCards(String chinese) {
-        Map<String, Integer> result = new HashMap<>();
-        String[] mapping = {"三", "四", "五", "六", "七", "八", "九", "十"};
-        String[] cards = {"3", "4", "5", "6", "7", "8", "9", "10"};
-
-        for (int i = 0; i < mapping.length; i++) {
-            if (chinese.contains(mapping[i])) {
-                result.put(cards[i], result.getOrDefault(cards[i], 0) + 1);
-            }
+    private String chineseToCard(String chinese) {
+        switch (chinese) {
+            case "三": return "3";
+            case "四": return "4";
+            case "五": return "5";
+            case "六": return "6";
+            case "七": return "7";
+            case "八": return "8";
+            case "九": return "9";
+            case "十": return "10";
+            default: return null;
         }
-
-        return result;
     }
 
     /**
-     * 调试：输出窗口结构
+     * 调试：输出当前窗口的所有文字
      */
-    public void dumpWindowInfo() {
+    public void dumpCurrentText() {
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root != null) {
-                dumpNodeRecursive(root, 0);
+                Log.d(TAG, "===== 当前窗口文字开始 =====");
+                collectAndDumpText(root, 0);
+                Log.d(TAG, "===== 当前窗口文字结束 =====");
                 root.recycle();
             }
         } catch (Exception e) {
@@ -512,24 +470,24 @@ public class CardAccessibilityService extends AccessibilityService {
         }
     }
 
-    private void dumpNodeRecursive(AccessibilityNodeInfo node, int depth) {
-        if (node == null || depth > 20) return;
+    private void collectAndDumpText(AccessibilityNodeInfo node, int depth) {
+        if (node == null || depth > 25) return;
 
         try {
-            String indent = "  ".repeat(Math.min(depth, 10));
             String text = node.getText() != null ? node.getText().toString() : "";
             String contentDesc = node.getContentDescription() != null ? node.getContentDescription().toString() : "";
             String className = node.getClassName() != null ? node.getClassName().toString() : "";
 
             if (!text.isEmpty() || !contentDesc.isEmpty()) {
-                Log.d(TAG, String.format("%s[%s] t='%s' d='%s'",
+                String indent = "  ".repeat(Math.min(depth, 10));
+                Log.d(TAG, String.format("%s[%s] text='%s' desc='%s'",
                         indent, className, text, contentDesc));
             }
 
             for (int i = 0; i < node.getChildCount(); i++) {
                 AccessibilityNodeInfo child = node.getChild(i);
                 if (child != null) {
-                    dumpNodeRecursive(child, depth + 1);
+                    collectAndDumpText(child, depth + 1);
                     child.recycle();
                 }
             }
@@ -546,5 +504,13 @@ public class CardAccessibilityService extends AccessibilityService {
             checkHandler.removeCallbacks(checkRunnable);
             checkHandler.post(checkRunnable);
         }
+    }
+
+    /**
+     * 设置调试模式
+     */
+    public static void setDebugMode(boolean debug) {
+        DEBUG_MODE = debug;
+        Log.d(TAG, "调试模式: " + debug);
     }
 }

@@ -10,7 +10,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="🃏 斗地主记牌器"
+        android:text="斗地主记牌器"
         android:textSize="24sp"
         android:textStyle="bold"
         android:textColor="#2C3E50"
@@ -22,7 +22,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:text="📖 使用说明\n\n• 点击「启动」打开悬浮窗\n• 开启无障碍服务实现自动识别\n• 悬浮窗显示剩余牌数\n• 点击牌面：数量 -1\n• 长按牌面：数量 +1\n• 点击 ✕ 关闭悬浮窗\n• 悬浮窗可拖动位置\n\n• 无障碍服务可绕过游戏截图限制"
+        android:text="使用说明\n\n• 点击「启动」打开悬浮窗\n• 开启无障碍服务实现自动识别\n• 悬浮窗显示剩余牌数\n• 点击牌面：数量 -1\n• 长按牌面：数量 +1\n• 拖动悬浮窗可移动位置\n• 点击 ✕ 关闭悬浮窗"
         android:textSize="14sp"
         android:textColor="#34495E"
         android:lineSpacingExtra="4dp"
@@ -78,13 +78,24 @@
             android:background="#27AE60"
             android:textColor="#FFFFFF" />
 
+        <!-- 调试按钮 -->
+        <Button
+            android:id="@+id/btn_debug"
+            android:layout_width="200dp"
+            android:layout_height="45dp"
+            android:layout_marginTop="10dp"
+            android:text="🔍 调试：查看UI节点"
+            android:textSize="13sp"
+            android:background="#95A5A6"
+            android:textColor="#FFFFFF" />
+
         <!-- 重置按钮 -->
         <Button
             android:id="@+id/btn_reset"
             android:layout_width="200dp"
             android:layout_height="50dp"
             android:layout_marginTop="10dp"
-            android:text="🔄 重置所有牌"
+            android:text="重置所有牌"
             android:textSize="14sp"
             android:background="#3498DB"
             android:textColor="#FFFFFF" />

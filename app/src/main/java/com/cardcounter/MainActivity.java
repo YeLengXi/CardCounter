@@ -10,7 +10,7 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
-import android.Switch;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 

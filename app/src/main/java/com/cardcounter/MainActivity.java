@@ -1,40 +1,45 @@
 package com.cardcounter;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
-import android.widget.Switch;
+import android.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
- * 主Activity - 带自动识别功能
+ * 主Activity - 带无障碍服务自动识别
  */
 public class MainActivity extends Activity {
 
     private static final int REQUEST_OVERLAY_PERMISSION = 1001;
-    private static final int REQUEST_SCREEN_CAPTURE = 1002;
 
     private Switch switchService;
     private TextView tvStatus;
     private Button btnReset;
-    private Button btnCapturePermission;
+    private Button btnAccessibility;
+    private TextView tvAccessibilityStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // 初始化截屏管理器
+        // 初始化
         ScreenCaptureManager.getInstance().init(this);
         CardRecognizer.getInstance().init();
 
-        // 检查权限
+        // 检查悬浮窗权限
         if (!hasOverlayPermission()) {
             showPermissionDialog();
         }
@@ -46,7 +51,8 @@ public class MainActivity extends Activity {
         switchService = findViewById(R.id.switch_service);
         tvStatus = findViewById(R.id.tv_status);
         btnReset = findViewById(R.id.btn_reset);
-        btnCapturePermission = findViewById(R.id.btn_capture_permission);
+        btnAccessibility = findViewById(R.id.btn_accessibility);
+        tvAccessibilityStatus = findViewById(R.id.tv_accessibility_status);
 
         // 开关切换
         switchService.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -63,11 +69,11 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "已重置", Toast.LENGTH_SHORT).show();
         });
 
-        // 截屏权限按钮
-        if (btnCapturePermission != null) {
-            updateCapturePermissionButton();
-            btnCapturePermission.setOnClickListener(v -> {
-                ScreenCaptureManager.getInstance().requestPermission(MainActivity.this);
+        // 无障碍服务按钮
+        if (btnAccessibility != null) {
+            updateAccessibilityButton();
+            btnAccessibility.setOnClickListener(v -> {
+                openAccessibilitySettings();
             });
         }
 
@@ -78,17 +84,52 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         updateServiceStatus();
-        if (btnCapturePermission != null) {
-            updateCapturePermissionButton();
+        if (btnAccessibility != null) {
+            updateAccessibilityButton();
         }
     }
 
-    private void updateCapturePermissionButton() {
-        boolean hasPermission = ScreenCaptureManager.getInstance().hasPermission();
-        if (btnCapturePermission != null) {
-            btnCapturePermission.setText(hasPermission ? "✓ 截屏权限已授予" : "授予截屏权限");
-            btnCapturePermission.setEnabled(!hasPermission);
+    private void updateAccessibilityButton() {
+        boolean isEnabled = isAccessibilityServiceEnabled();
+        if (btnAccessibility != null) {
+            btnAccessibility.setText(isEnabled ? "✓ 无障碍服务已开启" : "开启无障碍服务");
+            btnAccessibility.setEnabled(!isEnabled);
         }
+        if (tvAccessibilityStatus != null) {
+            tvAccessibilityStatus.setText(isEnabled ? "自动识别：已启用" : "自动识别：未启用");
+            tvAccessibilityStatus.setTextColor(isEnabled ? 0xFF27AE60 : 0xFFE67E22);
+        }
+    }
+
+    /**
+     * 检查无障碍服务是否启用
+     */
+    private boolean isAccessibilityServiceEnabled() {
+        String service = getPackageName() + "/.CardAccessibilityService";
+        String enabledServices = Settings.Secure.getString(
+                getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        );
+
+        if (enabledServices != null) {
+            return enabledServices.contains(service);
+        }
+        return false;
+    }
+
+    /**
+     * 打开无障碍服务设置页面
+     */
+    private void openAccessibilitySettings() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("开启无障碍服务")
+                .setMessage("开启无障碍服务后，记牌器可以自动识别游戏中的牌面。\n\n1. 在设置中找到「记牌器」\n2. 开启无障碍服务开关")
+                .setPositiveButton("去设置", (dialog, which) -> {
+                    Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                    startActivity(intent);
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private void updateServiceStatus() {
@@ -130,22 +171,6 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "未授予悬浮窗权限", Toast.LENGTH_SHORT).show();
                 finish();
             }
-        } else if (requestCode == REQUEST_SCREEN_CAPTURE) {
-            // 处理截屏权限结果
-            ScreenCaptureManager.getInstance().handleActivityResult(requestCode, resultCode, data);
-            updateCapturePermissionButton();
-
-            if (resultCode == Activity.RESULT_OK) {
-                Toast.makeText(this, "截屏权限已授予，自动识别功能已启用", Toast.LENGTH_SHORT).show();
-
-                // 如果服务正在运行，通知其启用自动识别
-                if (FloatWindowService.isRunning()) {
-                    FloatWindowService service = FloatWindowService.getInstance();
-                    if (service != null) {
-                        service.enableAutoCapture();
-                    }
-                }
-            }
         }
     }
 
@@ -156,18 +181,18 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // 检查是否有截屏权限
-        if (!ScreenCaptureManager.getInstance().hasPermission()) {
+        // 检查无障碍服务
+        if (!isAccessibilityServiceEnabled()) {
             new android.app.AlertDialog.Builder(this)
-                    .setTitle("需要截屏权限")
-                    .setMessage("自动识别牌面功能需要截屏权限，是否现在授予？")
-                    .setPositiveButton("授予", (dialog, which) -> {
-                        ScreenCaptureManager.getInstance().requestPermission(MainActivity.this);
+                    .setTitle("建议开启无障碍服务")
+                    .setMessage("无障碍服务可以让记牌器自动识别打出的牌面，无需手动操作。\n\n是否现在开启？")
+                    .setPositiveButton("去开启", (dialog, which) -> {
+                        openAccessibilitySettings();
                         switchService.setChecked(false);
                     })
                     .setNegativeButton("稍后", (dialog, which) -> {
-                        // 不授予权限也启动服务，但无法自动识别
                         startServiceOnly();
+                        Toast.makeText(this, "可以稍后在设置中开启", Toast.LENGTH_LONG).show();
                     })
                     .show();
             return;

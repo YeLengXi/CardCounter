@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">记牌器</string>
+    <string name="accessibility_service_description">斗地主记牌器自动识别服务。用于读取游戏界面中的牌面信息，实现自动记牌功能。不会收集任何个人数据。</string>
 </resources>

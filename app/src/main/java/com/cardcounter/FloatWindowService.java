@@ -7,12 +7,9 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.os.Build;
-import android.os.Handler;
 import android.os.IBinder;
-import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -23,18 +20,16 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 悬浮窗服务 - 带自动识别功能
+ * 悬浮窗服务 - 使用无障碍服务自动识别
  */
 public class FloatWindowService extends Service {
 
     private static final String TAG = "FloatWindowService";
     private static final String CHANNEL_ID = "CardCounterChannel";
     private static final int NOTIFICATION_ID = 1001;
-    private static final int AUTO_CAPTURE_INTERVAL = 2000; // 每2秒识别一次
 
     private static FloatWindowService instance;
     private WindowManager windowManager;
@@ -42,13 +37,6 @@ public class FloatWindowService extends Service {
     private WindowManager.LayoutParams params;
 
     private LinearLayout cardsContainer;
-
-    // 自动识别相关
-    private boolean autoCaptureEnabled = false;
-    private Handler autoCaptureHandler;
-    private Runnable autoCaptureRunnable;
-    private String lastRecognizedText = "";
-    private Bitmap lastCaptureBitmap = null;
 
     @Override
     public void onCreate() {
@@ -68,10 +56,7 @@ public class FloatWindowService extends Service {
         }
 
         // 延迟创建悬浮窗
-        new Handler().postDelayed(this::createFloatWindowSafe, 100);
-
-        // 初始化自动识别
-        initAutoCapture();
+        new android.os.Handler().postDelayed(this::createFloatWindowSafe, 100);
     }
 
     private void createFloatWindowSafe() {
@@ -97,15 +82,11 @@ public class FloatWindowService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        stopAutoCapture();
 
         if (windowManager != null && floatView != null) {
             windowManager.removeView(floatView);
         }
         instance = null;
-
-        // 释放截屏资源
-        ScreenCaptureManager.getInstance().release();
     }
 
     public static FloatWindowService getInstance() {
@@ -117,86 +98,9 @@ public class FloatWindowService extends Service {
     }
 
     /**
-     * 启用自动识别
+     * 处理无障碍服务识别到的牌面
      */
-    public void enableAutoCapture() {
-        if (ScreenCaptureManager.getInstance().hasPermission()) {
-            autoCaptureEnabled = true;
-            startAutoCapture();
-            Log.d(TAG, "自动识别已启用");
-        }
-    }
-
-    /**
-     * 禁用自动识别
-     */
-    public void disableAutoCapture() {
-        autoCaptureEnabled = false;
-        stopAutoCapture();
-        Log.d(TAG, "自动识别已禁用");
-    }
-
-    private void initAutoCapture() {
-        autoCaptureHandler = new Handler(Looper.getMainLooper());
-        autoCaptureRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (autoCaptureEnabled) {
-                    performAutoCapture();
-                    autoCaptureHandler.postDelayed(this, AUTO_CAPTURE_INTERVAL);
-                }
-            }
-        };
-    }
-
-    private void startAutoCapture() {
-        if (autoCaptureHandler != null && autoCaptureRunnable != null) {
-            autoCaptureHandler.post(autoCaptureRunnable);
-        }
-    }
-
-    private void stopAutoCapture() {
-        if (autoCaptureHandler != null && autoCaptureRunnable != null) {
-            autoCaptureHandler.removeCallbacks(autoCaptureRunnable);
-        }
-    }
-
-    private void performAutoCapture() {
-        if (!ScreenCaptureManager.getInstance().hasPermission()) {
-            return;
-        }
-
-        ScreenCaptureManager.getInstance().startCapture(this, new ScreenCaptureManager.ScreenCaptureCallback() {
-            @Override
-            public void onCaptureReady(Bitmap bitmap) {
-                if (bitmap != null) {
-                    lastCaptureBitmap = bitmap;
-                    recognizeCards(bitmap);
-                }
-            }
-
-            @Override
-            public void onCaptureError(String error) {
-                Log.e(TAG, "截图失败: " + error);
-            }
-        });
-    }
-
-    private void recognizeCards(Bitmap bitmap) {
-        CardRecognizer.getInstance().recognizeCards(bitmap, new CardRecognizer.CardRecognitionCallback() {
-            @Override
-            public void onCardsRecognized(Map<String, Integer> playedCards) {
-                updateCardsFromRecognition(playedCards);
-            }
-
-            @Override
-            public void onRecognitionError(String error) {
-                Log.e(TAG, "识别失败: " + error);
-            }
-        });
-    }
-
-    private void updateCardsFromRecognition(Map<String, Integer> playedCards) {
+    public void onCardsRecognized(Map<String, Integer> playedCards) {
         if (playedCards == null || playedCards.isEmpty()) {
             return;
         }
@@ -250,9 +154,10 @@ public class FloatWindowService extends Service {
     private Notification createNotification() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                boolean accessibilityEnabled = CardAccessibilityService.isEnabled();
                 Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
                         .setContentTitle("记牌器运行中")
-                        .setContentText(autoCaptureEnabled ? "自动识别已启用" : "点击数字减少")
+                        .setContentText(accessibilityEnabled ? "自动识别已启用" : "点击数字减少")
                         .setSmallIcon(android.R.drawable.ic_menu_info_details)
                         .setOngoing(true);
 
@@ -310,9 +215,11 @@ public class FloatWindowService extends Service {
             // 添加到窗口
             windowManager.addView(floatView, params);
 
-            // 如果有截屏权限，自动启用识别
-            if (ScreenCaptureManager.getInstance().hasPermission()) {
-                enableAutoCapture();
+            // 设置无障碍服务回调
+            if (CardAccessibilityService.isEnabled()) {
+                CardAccessibilityService.getInstance().setCallback(playedCards -> {
+                    onCardsRecognized(playedCards);
+                });
             }
 
         } catch (Exception e) {

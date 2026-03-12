@@ -105,14 +105,21 @@ public class MainActivity extends Activity {
      * 检查无障碍服务是否启用
      */
     private boolean isAccessibilityServiceEnabled() {
-        String service = getPackageName() + "/.CardAccessibilityService";
+        String packageName = getPackageName();
+        String serviceName = packageName + "/.CardAccessibilityService";
+        String serviceNameAlt = packageName + "/" + packageName + ".CardAccessibilityService";
+
         String enabledServices = Settings.Secure.getString(
                 getContentResolver(),
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         );
 
         if (enabledServices != null) {
-            return enabledServices.contains(service);
+            // 检查多种可能的格式
+            return enabledServices.contains(serviceName) ||
+                   enabledServices.contains(serviceNameAlt) ||
+                   enabledServices.contains("CardAccessibilityService") ||
+                   enabledServices.contains(packageName);
         }
         return false;
     }

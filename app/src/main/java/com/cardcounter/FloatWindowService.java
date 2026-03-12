@@ -25,22 +25,28 @@ import android.widget.Toast;
 import java.util.Map;
 
 /**
- * 悬浮窗服务 - 增强保活能力
+ * 悬浮窗服务 - 支持自由拖拽到屏幕任何位置
  */
 public class FloatWindowService extends Service {
 
     private static final String TAG = "FloatWindow";
     private static final String CHANNEL_ID = "CardCounterChannel";
     private static final int NOTIFICATION_ID = 1001;
+    private static final int TOUCH_SLOP = 10; // 触发拖拽的最小移动距离
 
     private static FloatWindowService instance;
     private WindowManager windowManager;
     private View floatView;
-    private View dragHandle;
     private WindowManager.LayoutParams params;
 
     private LinearLayout cardsContainer;
     private Handler uiHandler;
+
+    // 拖拽相关
+    private int initialX, initialY;
+    private float initialTouchX, initialTouchY;
+    private boolean isDragging = false;
+    private int startClickX, startClickY; // 用于判断是否是点击
 
     @Override
     public void onCreate() {
@@ -50,7 +56,6 @@ public class FloatWindowService extends Service {
 
         Log.d(TAG, "FloatWindowService onCreate");
 
-        // 立即启动前台服务
         createNotificationChannel();
         Notification notification = createNotification();
         try {
@@ -60,27 +65,21 @@ public class FloatWindowService extends Service {
             Log.e(TAG, "startForeground error", e);
         }
 
-        // 延迟创建悬浮窗
         uiHandler.postDelayed(this::createFloatWindowSafe, 100);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
-        // 确保前台服务持续运行
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Android 14+ 需要明确声明前台服务类型
             startForeground(NOTIFICATION_ID, createNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         }
-        // START_STICKY: 服务被杀死后会自动重启
-        // START_REDELIVER_INTENT: 如果服务在处理intent时被杀死，重启后会重新传递intent
         return START_STICKY;
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         Log.d(TAG, "onTaskRemoved - 应用被从最近任务中移除");
-        // 重新启动服务，保持服务运行
         Intent restartIntent = new Intent(getApplicationContext(), FloatWindowService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(restartIntent);
@@ -88,18 +87,6 @@ public class FloatWindowService extends Service {
             startService(restartIntent);
         }
         super.onTaskRemoved(rootIntent);
-    }
-
-    @Override
-    public void onLowMemory() {
-        Log.d(TAG, "onLowMemory - 系统内存不足");
-        super.onLowMemory();
-    }
-
-    @Override
-    public void onTrimMemory(int level) {
-        Log.d(TAG, "onTrimMemory - level: " + level);
-        super.onTrimMemory(level);
     }
 
     @Override
@@ -141,9 +128,6 @@ public class FloatWindowService extends Service {
         return instance != null;
     }
 
-    /**
-     * 处理无障碍服务识别到的牌面
-     */
     public void onCardsRecognized(Map<String, Integer> playedCards) {
         if (playedCards == null || playedCards.isEmpty()) {
             return;
@@ -180,11 +164,10 @@ public class FloatWindowService extends Service {
                 NotificationChannel channel = new NotificationChannel(
                         CHANNEL_ID,
                         "记牌器",
-                        NotificationManager.IMPORTANCE_HIGH  // 提高重要性
+                        NotificationManager.IMPORTANCE_HIGH
                 );
-                channel.setDescription("记牌器悬浮窗服务 - 保持运行以实现自动记牌");
+                channel.setDescription("记牌器悬浮窗服务");
                 channel.setShowBadge(false);
-                channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
 
                 NotificationManager manager = getSystemService(NotificationManager.class);
                 if (manager != null) {
@@ -202,13 +185,12 @@ public class FloatWindowService extends Service {
                 boolean accessibilityEnabled = CardAccessibilityService.isEnabled();
 
                 Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
-                        .setContentTitle("🃏 记牌器运行中")
-                        .setContentText(accessibilityEnabled ? "自动识别已启用" : "手动模式 - 点击牌面减1")
+                        .setContentTitle("记牌器运行中")
+                        .setContentText(accessibilityEnabled ? "自动识别已启用" : "手动模式")
                         .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                        .setOngoing(true)  // 不可清除
+                        .setOngoing(true)
                         .setAutoCancel(false);
 
-                // Android 13+ 需要设置通知权限
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     Intent notificationIntent = new Intent(this, MainActivity.class);
                     notificationIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -241,8 +223,6 @@ public class FloatWindowService extends Service {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
             floatView = inflater.inflate(R.layout.float_window, null);
 
-            dragHandle = floatView.findViewById(R.id.drag_handle);
-
             // 获取保存的位置
             SharedPreferences prefs = getSharedPreferences("float_window", Context.MODE_PRIVATE);
             int savedX = prefs.getInt("x", -1);
@@ -269,7 +249,7 @@ public class FloatWindowService extends Service {
 
             initFloatViews();
 
-            // 只在拖拽条上设置拖拽监听
+            // 设置拖拽监听 - 使用自定义触摸分发
             setupDragListener();
 
             // 添加到窗口
@@ -287,18 +267,12 @@ public class FloatWindowService extends Service {
     }
 
     /**
-     * 设置拖拽监听 - 只在拖拽条上响应
+     * 设置拖拽监听 - 通过覆盖onTouchEvent实现，不干扰子View点击
      */
     private void setupDragListener() {
-        if (dragHandle == null) {
-            Log.w(TAG, "拖拽条未找到");
-            return;
-        }
-
-        dragHandle.setOnTouchListener(new View.OnTouchListener() {
-            private int initialX, initialY;
-            private float initialTouchX, initialTouchY;
-
+        // 使用一个透明的覆盖层来处理拖拽
+        // 这样不会干扰子View的点击事件
+        floatView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 try {
@@ -308,33 +282,52 @@ public class FloatWindowService extends Service {
                             initialY = params.y;
                             initialTouchX = event.getRawX();
                             initialTouchY = event.getRawY();
-                            return true;
+                            startClickX = (int) event.getX();
+                            startClickY = (int) event.getY();
+                            isDragging = false;
+                            // 返回false让事件传递给子View处理点击
+                            return false;
 
                         case MotionEvent.ACTION_MOVE:
                             float deltaX = event.getRawX() - initialTouchX;
                             float deltaY = event.getRawY() - initialTouchY;
 
-                            params.x = initialX + (int) deltaX;
-                            params.y = initialY + (int) deltaY;
+                            // 判断是否开始拖拽
+                            if (Math.abs(deltaX) > TOUCH_SLOP || Math.abs(deltaY) > TOUCH_SLOP) {
+                                if (!isDragging) {
+                                    isDragging = true;
+                                    // 开始拖拽，请求父视图不拦截事件
+                                    floatView.getParent().requestDisallowInterceptTouchEvent(true);
+                                }
 
-                            // 限制在屏幕范围内
-                            int screenWidth = getScreenWidth();
-                            int windowHeight = getWindowHeight();
-                            int viewWidth = floatView.getWidth();
-                            int viewHeight = floatView.getHeight();
+                                params.x = initialX + (int) deltaX;
+                                params.y = initialY + (int) deltaY;
 
-                            if (params.x < 0) params.x = 0;
-                            if (params.x + viewWidth > screenWidth) params.x = screenWidth - viewWidth;
-                            if (params.y < 0) params.y = 0;
-                            if (params.y + viewHeight > windowHeight) params.y = windowHeight - viewHeight;
+                                // 限制在屏幕范围内
+                                int screenWidth = getScreenWidth();
+                                int windowHeight = getWindowHeight();
+                                int viewWidth = floatView.getWidth();
+                                int viewHeight = floatView.getHeight();
 
-                            windowManager.updateViewLayout(floatView, params);
-                            return true;
+                                if (params.x < 0) params.x = 0;
+                                if (params.x + viewWidth > screenWidth) params.x = screenWidth - viewWidth;
+                                if (params.y < 0) params.y = 0;
+                                if (params.y + viewHeight > windowHeight) params.y = windowHeight - viewHeight;
+
+                                windowManager.updateViewLayout(floatView, params);
+                            }
+                            // 继续传递事件给子View
+                            return isDragging;
 
                         case MotionEvent.ACTION_UP:
                         case MotionEvent.ACTION_CANCEL:
-                            savePosition(params.x, params.y);
-                            return true;
+                            if (isDragging) {
+                                savePosition(params.x, params.y);
+                                isDragging = false;
+                                return true; // 消费事件，不触发点击
+                            }
+                            // 不是拖拽，让子View处理点击
+                            return false;
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "拖拽异常", e);
@@ -404,6 +397,8 @@ public class FloatWindowService extends Service {
         // 点击减少
         view.setOnClickListener(v -> {
             try {
+                // 如果正在拖拽，不处理点击
+                if (isDragging) return;
                 CardDataManager.getInstance().removeCard(cardName);
                 updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
             } catch (Exception e) {
@@ -414,6 +409,7 @@ public class FloatWindowService extends Service {
         // 长按增加
         view.setOnLongClickListener(v -> {
             try {
+                if (isDragging) return false;
                 CardDataManager.getInstance().addCard(cardName);
                 updateCardDisplay(view, cardName, CardDataManager.getInstance().getCardCount(cardName));
             } catch (Exception e) {
